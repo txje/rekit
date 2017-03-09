@@ -26,6 +26,7 @@
 #define __DTW_H__
 
 #include "klib/kvec.h" // C dynamic vector
+#include "rmap.h"
 
 typedef kvec_t(uint8_t) pathvec;
 
@@ -52,6 +53,7 @@ static float score(float a, float b, float neutral_deviation) {
   return 1 - (diff / neutral_deviation);
 }
 
-result align(float* query, float* target, uint32_t qlen, uint32_t tlen, pathvec *path, int8_t ins_score, int8_t del_score, float neutral_deviation);
+int dtw_rmap(rmap map, int threshold);
+result align(float* query, float* target, size_t qlen, size_t tlen, pathvec *path, int8_t ins_score, int8_t del_score, float neutral_deviation);
 
 #endif /* __DTW_H__ */

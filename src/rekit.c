@@ -27,30 +27,38 @@
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
+
 #include "bnx.h"
 #include "rmap.h"
 #include "lsh.h"
 #include "dtw.h"
 
+void usage() {
+  printf("Usage: rekit [command] [options]\n");
+  printf("Commands:\n");
+  printf("  ovl: compute MinHash/pairwise Jaccard similarity\n");
+  printf("  aln: compute dynamic time warping glocal (overlap) alignments\n");
+  printf("Options:\n");
+  printf("  ovl <bnx> <q> <h> <seed> <threshold> <max_qgram_hits>\n");
+  printf("    bnx: A single BNX file containing rmaps\n");
+  printf("    q: Size of q-gram/k-mer to hash\n");
+  printf("    h: Number of hash functions to apply\n");
+  printf("    seed: Seed to random number generator\n");
+  printf("    threshold: Minimum number of k-mers to declare a match\n");
+  printf("    max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored\n");
+  printf("  aln <bnx> <threshold>\n");
+  printf("    bnx: A single BNX file containing rmaps\n");
+  printf("    threshold: Score threshold to report alignment\n");
+}
 
 int main(int argc, char *argv[]) {
-  if(argc < 7) {
-    printf("Usage: rekit <bnx> <q> <h> <seed> <threshold> <max_qgram_hits>\n");
-    printf("  bnx: A single BNX file containing rmaps\n");
-    printf("  q: Size of q-gram/k-mer to hash\n");
-    printf("  h: Number of hash functions to apply\n");
-    printf("  seed: Seed to random number generator\n");
-    printf("  threshold: Minimum number of k-mers to declare a match\n");
-    printf("  max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored\n");
-    printf("Not enough arguments.\n");
+  if(argc < 3) {
+    printf("Not enough arguments - specify a command and BNX file first.\n\n");
+    usage();
     return -1;
   }
-  char *bnx_file = argv[1];
-  int q = atoi(argv[2]);
-  int h = atoi(argv[3]);
-  int seed = atoi(argv[4]);
-  int threshold = atoi(argv[5]);
-  int max_qgrams = atoi(argv[6]);
+  char *command = argv[1];
+  char *bnx_file = argv[2];
 
   // test if files exist
   FILE* fp;
@@ -67,6 +75,32 @@ int main(int argc, char *argv[]) {
   time_t t1 = time(NULL);
   printf("# Loaded in %d seconds\n", (t1-t0));
 
-  int ret = ovl_rmap(map, q, h, seed, threshold, max_qgrams, -1);
+  int ret = 1;
+
+  if(strcmp(command, "ovl") == 0) {
+    if(argc < 8) {
+      printf("Not enough arguments for 'ovl'.\n\n");
+      usage();
+      return -1;
+    }
+    int q = atoi(argv[3]);
+    int h = atoi(argv[4]);
+    int seed = atoi(argv[5]);
+    int threshold = atoi(argv[6]);
+    int max_qgrams = atoi(argv[7]);
+
+    int ret = ovl_rmap(map, q, h, seed, threshold, max_qgrams, -1);
+  }
+  else if(strcmp(command, "aln") == 0) {
+    if(argc < 4) {
+      printf("Not enough arguments for 'aln'.\n\n");
+      usage();
+      return -1;
+    }
+    int threshold = atoi(argv[3]);
+
+    int ret = dtw_rmap(map, threshold);
+  }
+
   return ret;
 }

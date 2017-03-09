@@ -41,11 +41,81 @@ v |
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "klib/kvec.h" // C dynamic vector
 #include "dtw.h"
+#include "rmap.h"
 
-result align(float* query, float* target, uint32_t qlen, uint32_t tlen, pathvec *path, int8_t ins_score, int8_t del_score, float neutral_deviation) {
+int dtw_rmap(rmap map, int threshold) {
+  int n_rmaps = kv_size(map.fragments);
+  printf("# Computing pairwise DTW alignments for %d rmaps\n", n_rmaps);
 
+  time_t t0 = time(NULL);
+
+  // initialize all the vectors here
+  // they can be "reset" like query.n = 0
+  kvec_t(float) query;
+  kv_init(query);
+  kvec_t(float) target;
+  kv_init(target);
+  pathvec path;
+  kv_init(path); // if you forget to init the vec it will just segfault the first time you try to push
+
+  int i,q,t;
+  for (q = 0; q < 10; q++) { //n_rmaps; q++) {
+    nickVec qnicks = kv_A(map.fragments, q).nicks;
+    size_t qlen = kv_size(qnicks);
+
+    // build ordered kvec of fragment sizes instead of nick positions
+    // - this is a very common operation - probably for all alignments
+    //   maybe it should move into rmap.c at some point
+    query.n = 0;
+    for(i = 0; i < qlen; i++) {
+      float frg_size = (float)(kv_A(qnicks, i).pos - (i>0 ? kv_A(qnicks, i-1).pos : 0));
+      kv_push(float, query, frg_size);
+    }
+
+    for (t = q+1; t < n_rmaps; t++) {
+      nickVec tnicks = kv_A(map.fragments, t).nicks;
+      size_t tlen = kv_size(tnicks);
+
+      target.n = 0;
+      for(i = 0; i < tlen; i++) {
+        float frg_size = (float)(kv_A(tnicks, i).pos - (i>0 ? kv_A(tnicks, i-1).pos : 0));
+        kv_push(float, target, frg_size);
+      }
+
+      /*
+       * Scoring overview:
+       * - Indels cost 1, so any fragments closer than 2kb will be given a "match" score
+       * - |f0 - f1| = 0: 1
+       * - |f0 - f1| = 1000: 0
+       * - |f0 - f1| = 2000: -1
+       */
+      path.n = 0; // reset path vec
+      result aln = align(query.a, target.a, qlen, tlen, &path, -1, -1, 1000); 
+      if(aln.failed) {
+        printf("q %d -- t %d FAILED\n", q, t);
+        return -1;
+      }
+
+      if(!aln.failed && aln.score >= threshold) {
+        // q, t, qstart, qend, qlen, tstart, tend, tlen, score
+        printf("%d,%d,%d,%d,%d,%d,%d,%d,%f\n", q, t, aln.qstart, aln.qend, qlen, aln.tstart, aln.tend, tlen, aln.score);
+      }
+
+    }
+  }
+
+  kv_destroy(query);
+  kv_destroy(target);
+  kv_destroy(path);
+
+  time_t t1 = time(NULL);
+  printf("# Computed DTW alignments for %d rmaps in %d seconds\n", n_rmaps, (t1-t0));
+}
+
+result align(float* query, float* target, size_t qlen, size_t tlen, pathvec *path, int8_t ins_score, int8_t del_score, float neutral_deviation) {
   if(tlen == 0 || qlen == 0) {
     result res;
     res.failed = 1;
@@ -54,6 +124,7 @@ result align(float* query, float* target, uint32_t qlen, uint32_t tlen, pathvec 
   }
 
   // must be dynamically allocated to prevent stack overflows (on *some* systems)
+  // to make this more efficient for our uses, they could be allocated once for the larget sequences and reused
   float* score_matrix[qlen+1];
   uint8_t* direction_matrix[qlen+1];
   int i;
@@ -73,6 +144,7 @@ result align(float* query, float* target, uint32_t qlen, uint32_t tlen, pathvec 
   }
 
   float match, ins, del;
+
 
   for(y = 0; y < qlen; y++) {
     for(x = 0; x < tlen; x++) {
@@ -152,6 +224,7 @@ result align(float* query, float* target, uint32_t qlen, uint32_t tlen, pathvec 
   res.qend = max_y;
   res.tstart = x;
   res.tend = max_x;
+  res.failed = 0;
   // end positions are INCLUSIVE
   
   //printf("max_y: %i, max_x: %i\n", max_y, max_x);

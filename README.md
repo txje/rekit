@@ -32,10 +32,18 @@ Installation
 Usage
 -----
 
-    ./rekit <bnx> <q> <h> <seed> <threshold> <max_qgram_hits>
-      bnx: A single BNX file containing rmaps
-      q: Size of q-gram/k-mer to hash
-      h: Number of hash functions to apply
-      seed: Seed to random number generator
-      threshold: Minimum number of k-mers to declare a match
-      max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored
+    Usage: rekit [command] [options]
+    Commands:
+      ovl: compute MinHash/pairwise Jaccard similarity
+      aln: compute dynamic time warping glocal (overlap) alignments
+    Options:
+      ovl <bnx> <q> <h> <seed> <threshold> <max_qgram_hits>
+        bnx: A single BNX file containing rmaps
+        q: Size of q-gram/k-mer to hash
+        h: Number of hash functions to apply
+        seed: Seed to random number generator
+        threshold: Minimum number of k-mers to declare a match
+        max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored
+      aln <bnx> <threshold>
+        bnx: A single BNX file containing rmaps
+        threshold: Score threshold to report alignment
