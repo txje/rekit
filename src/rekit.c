@@ -58,6 +58,65 @@ void usage() {
   printf("    max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored\n");
 }
 
+/*
+ * Takes a set of rmaps (from one BNX file)
+ * and returns an array of byteVecs, one for each fragment
+ * where the values are discretized, potentially trimmed, sub-fragment sizes (between nick sites)
+ */
+byteVec* nicks_to_frags_bin(rmap *map, uint32_t denom, int readLimit, int ltrim, int rtrim) {
+  byteVec *frags = (byteVec*)malloc(sizeof(byteVec) * kv_size(map->fragments));
+  int i;
+  uint32_t f = 0;
+  while (f < kv_size(map->fragments)) {
+
+    nickVec nicks = kv_A(map->fragments, f).nicks;
+    int slen = kv_size(nicks);
+
+    // build ordered kvec of fragment sizes instead of nick positions
+    // and bin their values into nbins
+    kv_init(frags[f]);
+    for(i = ltrim; i < slen-rtrim; i++) {
+      uint32_t frg_size = (kv_A(nicks, i).pos - (i>0 ? kv_A(nicks, i-1).pos : 0));
+      uint8_t bin = (frg_size / denom > 255) ? 255 : (frg_size / denom);
+      kv_push(uint8_t, frags[f], bin);
+    }
+
+    f++;
+
+    if(readLimit > 0 && f >= readLimit) {
+      break;
+    }
+  }
+  return frags;
+}
+
+u32Vec* nicks_to_frags(rmap *map, int readLimit, int ltrim, int rtrim) {
+  u32Vec *frags = (u32Vec*)malloc(sizeof(u32Vec) * kv_size(map->fragments));
+  int i;
+  uint32_t f = 0;
+  while (f < kv_size(map->fragments)) {
+
+    nickVec nicks = kv_A(map->fragments, f).nicks;
+    int slen = kv_size(nicks);
+
+    // build ordered kvec of fragment sizes instead of nick positions
+    // and bin their values into nbins
+    kv_init(frags[f]);
+    for(i = ltrim; i < slen-rtrim; i++) {
+      uint32_t frg_size = (kv_A(nicks, i).pos - (i>0 ? kv_A(nicks, i-1).pos : 0));
+      kv_push(uint32_t, frags[f], frg_size);
+    }
+
+    f++;
+
+    if(readLimit > 0 && f >= readLimit) {
+      break;
+    }
+  }
+  return frags;
+}
+
+
 int main(int argc, char *argv[]) {
   if(argc < 3) {
     printf("Not enough arguments - specify a command and BNX file first.\n\n");
@@ -79,9 +138,12 @@ int main(int argc, char *argv[]) {
   printf("# Loading '%s' into rmap\n", bnx_file);
   time_t t0 = time(NULL);
   rmap map = bn_load(bnx_file);
+
+  size_t n_frags = kv_size(map.fragments);
   time_t t1 = time(NULL);
   printf("# Loaded in %d seconds\n", (t1-t0));
 
+  int i = 0;
   int ret = 1;
 
   if(strcmp(command, "ovl") == 0) {
@@ -96,8 +158,20 @@ int main(int argc, char *argv[]) {
     int threshold = atoi(argv[6]);
     int max_qgrams = atoi(argv[7]);
 
-    int ret = ovl_rmap(map, q, h, seed, threshold, max_qgrams, -1);
+    // convert map of nicks to a simple array of byte vectors representing subfragment lengths
+    // discretize by 1kb if doing any hashing, do no dicretization if doing DTW
+    // -1 can be changed to a positive to number to limit the total number of fragments that are considered
+    byteVec *frags = nicks_to_frags_bin(&map, 1000, -1, 1, 1);
+
+    int ret = ovl_rmap(frags, n_frags, q, h, seed, threshold, max_qgrams, -1);
+
+    // free
+    for(i = 0; i < n_frags; i++) {
+      kv_destroy(frags[i]);
+    }
+    free(frags);
   }
+
   else if(strcmp(command, "aln") == 0) {
     if(argc < 4) {
       printf("Not enough arguments for 'aln'.\n\n");
@@ -106,8 +180,20 @@ int main(int argc, char *argv[]) {
     }
     int threshold = atoi(argv[3]);
 
-    int ret = dtw_rmap(map, threshold);
+    // convert map of nicks to a simple array of byte vectors representing subfragment lengths
+    // discretize by 1kb if doing any hashing, do no dicretization if doing DTW
+    // -1 can be changed to a positive to number to limit the total number of fragments that are considered
+    u32Vec *frags = nicks_to_frags(&map, -1, 1, 1);
+
+    int ret = dtw_rmap(frags, n_frags, threshold);
+
+    // free
+    for(i = 0; i < n_frags; i++) {
+      kv_destroy(frags[i]);
+    }
+    free(frags);
   }
+
   else if(strcmp(command, "hsh") == 0) {
     if(argc < 6) {
       printf("Not enough arguments for 'aln'.\n\n");
@@ -118,8 +204,20 @@ int main(int argc, char *argv[]) {
     int threshold = atoi(argv[4]);
     int max_qgrams = atoi(argv[5]);
 
-    int ret = hash_rmap(map, q, threshold, max_qgrams, -1);
+    // convert map of nicks to a simple array of byte vectors representing subfragment lengths
+    // discretize by 1kb if doing any hashing, do no dicretization if doing DTW
+    // -1 can be changed to a positive to number to limit the total number of fragments that are considered
+    byteVec *frags = nicks_to_frags_bin(&map, 1000, -1, 1, 1);
+
+    int ret = hash_rmap(frags, n_frags, q, threshold, max_qgrams, -1);
+
+    // free
+    for(i = 0; i < n_frags; i++) {
+      kv_destroy(frags[i]);
+    }
+    free(frags);
   }
 
+  rmap_free(&map);
   return ret;
 }

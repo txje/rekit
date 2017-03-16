@@ -35,6 +35,6 @@ typedef struct {
 
 typedef kvec_t(Min*) minVec;
 
-int ovl_rmap(rmap map, int q, int h, int seed, int threshold, int max_qgrams, int readLimit);
+int ovl_rmap(byteVec* frags, size_t n_frags, int q, int h, int seed, int threshold, int max_qgrams, int readLimit);
 
 #endif /* __LSH_H__ */

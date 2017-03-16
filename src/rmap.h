@@ -47,6 +47,9 @@ typedef struct {
 
 typedef kvec_t(nick) nickVec;
 
+typedef kvec_t(uint32_t) u32Vec;
+typedef kvec_t(uint8_t) byteVec;
+
 
 typedef struct {  /* molecule, contig or chromosome */
 	char name[MAX_FRAGMENT_NAME_SIZE + 1];
@@ -63,7 +66,7 @@ typedef struct {
 	fragmentVec fragments;
 } rmap;
 
-void free_rmap(rmap *map);
+void rmap_free(rmap *map);
 void rmap_set_enzyme(rmap *map, const char *enzyme, const char *rec_seq);
 
 

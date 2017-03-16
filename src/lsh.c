@@ -47,20 +47,10 @@
  *
  * returns: an array of Min values (length is h)
  */
-Min* minhash (nickVec nicks, int k, int h, uint32_t denom, uint32_t hash_seeds[], unsigned char reverse) {
+Min* minhash (byteVec frags, int k, int h, uint32_t denom, uint32_t hash_seeds[], unsigned char reverse) {
 
   int i, j;
-  int slen = kv_size(nicks);
-
-  // build ordered kvec of fragment sizes instead of nick positions
-  // and bin their values into nbins
-  byteVec frags;
-  kv_init(frags);
-  for(i = 0; i < slen; i++) {
-    uint32_t frg_size = (kv_A(nicks, i).pos - (i>0 ? kv_A(nicks, i-1).pos : 0));
-    uint8_t bin = (frg_size / denom > 255) ? 255 : (frg_size / denom);
-    kv_push(uint8_t, frags, bin);
-  }
+  int slen = kv_size(frags);
 
   // initialize minimums, one per hash seed
   Min* m = (Min*)malloc(sizeof(Min)*h);
@@ -93,7 +83,7 @@ Min* minhash (nickVec nicks, int k, int h, uint32_t denom, uint32_t hash_seeds[]
 
 // if reverse is true (1), forward and reverse signatures will be adjacent such that
 // signature of read X forward is at index (2*X), and reverse is (2*X + 1)
-void hash_signatures(rmap map, int k, int h, uint32_t hash_seeds[], khash_t(qgramHash) **min_db, minVec *min_queries, int readLimit) {
+void hash_signatures(byteVec *frags, size_t n_frags, int k, int h, uint32_t hash_seeds[], khash_t(qgramHash) **min_db, minVec *min_queries, int readLimit) {
 
   int l, i, ret_val;
   uint32_t denom = 100; // bin fragments by 100bp
@@ -101,13 +91,12 @@ void hash_signatures(rmap map, int k, int h, uint32_t hash_seeds[], khash_t(qgra
   khint_t bin; // hash bin (result of kh_put)
 
   uint32_t f = 0;
-  while (f < kv_size(map.fragments)) {
+  while (f < n_frags) {
 
-    //printf("# Hashing fragment of size %d with %d nicks\n", kv_A(map.fragments, f).size, kv_size(kv_A(map.fragments, f).nicks));
-    Min *m = minhash(kv_A(map.fragments, f).nicks, k, h, denom, hash_seeds, 0);
+    Min *m = minhash(frags[f], k, h, denom, hash_seeds, 0);
 
     // only add hashes to the lookup dictionary if |sub-frags| >= k, otherwise they would be UINT32_MAX
-    if(min_db != NULL && kv_size(kv_A(map.fragments, f).nicks) >= k) {
+    if(min_db != NULL && kv_size(frags[f]) >= k) {
       for(i = 0; i < h; i++) {
         bin = kh_put(qgramHash, min_db[i], m[i].hash, &ret_val);
         if(ret_val == 1) { // bin is empty (unset)
@@ -121,7 +110,7 @@ void hash_signatures(rmap map, int k, int h, uint32_t hash_seeds[], khash_t(qgra
     }
     if(min_queries != NULL) {
       kv_push(Min*, *min_queries, m);
-      m = minhash(kv_A(map.fragments, f).nicks, k, h, denom, hash_seeds, 1);
+      m = minhash(frags[f], k, h, denom, hash_seeds, 1);
       kv_push(Min*, *min_queries, m);
     } else {
       free(m);
@@ -142,7 +131,7 @@ int free_lsh(khash_t(qgramHash) **min_db, int h, minVec *min_queries) {
   return 0;
 }
 
-int ovl_rmap(rmap map, int q, int h, int seed, int threshold, int max_qgrams, int readLimit) {
+int ovl_rmap(byteVec *frags, size_t n_frags, int q, int h, int seed, int threshold, int max_qgrams, int readLimit) {
 
   // construct array of hash seeds
   srand(seed); // seed random number generator
@@ -167,8 +156,8 @@ int ovl_rmap(rmap map, int q, int h, int seed, int threshold, int max_qgrams, in
   minVec min_queries;
   kv_init(min_queries);
 
-  printf("# Hashing %d rmap fragments\n", kv_size(map.fragments));
-  hash_signatures(map, q, h, hash_seeds, min_db, &min_queries, readLimit); // load both db and queires from single bnx
+  printf("# Hashing %d rmap fragments\n", n_frags);
+  hash_signatures(frags, n_frags, q, h, hash_seeds, min_db, &min_queries, readLimit); // load both db and queires from single bnx
 
   time_t t1 = time(NULL);
   printf("# Hashed %d rmaps in %d seconds\n", min_queries.n/2, (t1-t0));

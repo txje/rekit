@@ -44,16 +44,15 @@ static uint8_t MATCH = 0, INS = 1, DEL = 2;
 static float LOW = -1e38; // the order of the lowest possible 4-byte (single-precision) float
 
 
-static float score(float a, float b, float neutral_deviation) {
+static float score(uint32_t a, uint32_t b, uint32_t neutral_deviation) {
   float diff = (a > b ? (a - b) : (b - a));
   // score is:
   // 1 if fragments are the same size
   // 0 if fragments differ by neutral deviation
   // -1 if size difference is 2x neutral deviation
-  return 1 - (diff / neutral_deviation);
+  return 1.0 - (diff / (float)neutral_deviation);
 }
 
-int dtw_rmap(rmap map, int threshold);
-result ovl_align(float* query, float* target, size_t qlen, size_t tlen, pathvec *path, int8_t ins_score, int8_t del_score, float neutral_deviation);
+int dtw_rmap(u32Vec* frags, size_t n_frags, int threshold);
 
 #endif /* __DTW_H__ */

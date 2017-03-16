@@ -38,25 +38,13 @@
 /*
  * nicks: an array of nick positions as produced by bntools (bn_file.c)
  * k: q-gram size
- * denom: number of divide every raw value by - any results that exceed 255 will be clipped to 255
- *   - for denom = 1000, any fragments over 255Kb will appear to be 255
  * reverse: 0 - no, 1 - yes
  *
  * returns: 0 if successful, else 1
  */
-int insert_rmap(nickVec nicks, uint32_t read_id, int k, uint32_t denom, unsigned char reverse, khash_t(qgramHash) *db) {
+int insert_rmap(byteVec frags, uint32_t read_id, int k, unsigned char reverse, khash_t(qgramHash) *db) {
   int i, j;
-  int slen = kv_size(nicks);
-
-  // build ordered kvec of fragment sizes instead of nick positions
-  // and bin their values into nbins
-  byteVec frags;
-  kv_init(frags);
-  for(i = 0; i < slen; i++) {
-    uint32_t frg_size = (kv_A(nicks, i).pos - (i>0 ? kv_A(nicks, i-1).pos : 0));
-    uint8_t bin = (frg_size / denom > 255) ? 255 : (frg_size / denom);
-    kv_push(uint8_t, frags, bin);
-  }
+  int slen = kv_size(frags);
 
   // nick pos values are ints, rounded from the double in the bnx file, and may be 4 or 8 bytes long
   // they are related to the length of the whole fragment, so typically max out in the 100s of thousands (avg ~200k)
@@ -84,14 +72,12 @@ int insert_rmap(nickVec nicks, uint32_t read_id, int k, uint32_t denom, unsigned
 
 // if reverse is true (1), forward and reverse signatures will be adjacent such that
 // signature of read X forward is at index (2*X), and reverse is (2*X + 1)
-void build_hash_db(rmap map, int k, khash_t(qgramHash) *db, int readLimit) {
-  uint32_t denom = 1000; // bin fragments by <denom> bp
+void build_hash_db(byteVec *frags, size_t n_frags, int k, khash_t(qgramHash) *db, int readLimit) {
 
   uint32_t f = 0;
-  while (f < kv_size(map.fragments)) {
+  while (f < n_frags) {
 
-    //printf("# Hashing fragment of size %d with %d nicks\n", kv_A(map.fragments, f).size, kv_size(kv_A(map.fragments, f).nicks));
-    int res = insert_rmap(kv_A(map.fragments, f).nicks, f, k, denom, 0, db); // forward strand only right now
+    int res = insert_rmap(frags[f], f, k, 0, db); // forward strand only right now
     f++;
 
     if(readLimit > 0 && f >= readLimit) {
@@ -100,19 +86,9 @@ void build_hash_db(rmap map, int k, khash_t(qgramHash) *db, int readLimit) {
   }
 }
 
-khash_t(matchHash)* lookup(nickVec nicks, uint32_t read_id, int k, uint32_t denom, unsigned char reverse, khash_t(qgramHash) *db, int max_qgrams) {
+khash_t(matchHash)* lookup(byteVec frags, uint32_t read_id, int k, unsigned char reverse, khash_t(qgramHash) *db, int max_qgrams) {
   int i, j, m, ret_val;
-  int slen = kv_size(nicks);
-
-  // build ordered kvec of fragment sizes instead of nick positions
-  // and bin their values into nbins
-  byteVec frags;
-  kv_init(frags);
-  for(i = 0; i < slen; i++) {
-    uint32_t frg_size = (kv_A(nicks, i).pos - (i>0 ? kv_A(nicks, i-1).pos : 0));
-    uint8_t bin = (frg_size / denom > 255) ? 255 : (frg_size / denom);
-    kv_push(uint8_t, frags, bin);
-  }
+  int slen = kv_size(frags);
 
   // nick pos values are ints, rounded from the double in the bnx file, and may be 4 or 8 bytes long
   // they are related to the length of the whole fragment, so typically max out in the 100s of thousands (avg ~200k)
@@ -146,17 +122,16 @@ khash_t(matchHash)* lookup(nickVec nicks, uint32_t read_id, int k, uint32_t deno
   return hits;
 }
 
-void query_db(rmap map, int k, khash_t(qgramHash) *db, int readLimit, int max_qgrams, int threshold) {
+void query_db(byteVec *frags, size_t n_frags, int k, khash_t(qgramHash) *db, int readLimit, int max_qgrams, int threshold) {
   int i;
   uint32_t target;
-  uint32_t denom = 1000; // bin fragments by <denom> bp
 
   uint32_t f = 0;
-  while (f < kv_size(map.fragments)) {
+  while (f < n_frags) {
     unsigned char qrev = 0; // forward strand only right now - the database is also currently only fw, eventually we should query both
 
     //printf("# Hashing fragment of size %d with %d nicks\n", kv_A(map.fragments, f).size, kv_size(kv_A(map.fragments, f).nicks));
-    khash_t(matchHash) *hits = lookup(kv_A(map.fragments, f).nicks, f, k, denom, qrev, db, max_qgrams); // forward strand only right now
+    khash_t(matchHash) *hits = lookup(frags[f], f, k, qrev, db, max_qgrams); // forward strand only right now
 
     // assess hits for each target
     pairVec target_hits;
@@ -187,7 +162,7 @@ void query_db(rmap map, int k, khash_t(qgramHash) *db, int readLimit, int max_qg
 /*
  * readLimit: maximum reads to process for BOTH database and query
  */
-int hash_rmap(rmap map, int q, int threshold, int max_qgrams, int readLimit) {
+int hash_rmap(byteVec *frags, size_t n_frags, int q, int threshold, int max_qgrams, int readLimit) {
 
   // ------------------------- Create hash database -----------------------------
 
@@ -197,8 +172,8 @@ int hash_rmap(rmap map, int q, int threshold, int max_qgrams, int readLimit) {
   // -- maybe assess doing this the opposite way at a later date, I'm not sure which will be faster
   khash_t(qgramHash) *db = kh_init(qgramHash);
 
-  printf("# Hashing %d rmap fragments\n", kv_size(map.fragments));
-  build_hash_db(map, q, db, readLimit);
+  printf("# Hashing %d rmap fragments\n", n_frags);
+  build_hash_db(frags, n_frags, q, db, readLimit);
 
   time_t t1 = time(NULL);
   printf("# Hashed rmaps in %d seconds\n", (t1-t0));
@@ -206,8 +181,8 @@ int hash_rmap(rmap map, int q, int threshold, int max_qgrams, int readLimit) {
   // -------------------------------------------------------------------------------
 
   // ---------------------------- Look up queries in db ------------------------------
-  printf("# Querying %d rmap fragments\n", kv_size(map.fragments));
-  query_db(map, q, db, readLimit, max_qgrams, threshold);
+  printf("# Querying %d rmap fragments\n", n_frags);
+  query_db(frags, n_frags, q, db, readLimit, max_qgrams, threshold);
 
   t1 = time(NULL);
   printf("# Queried and output in %d seconds\n", (t1-t0));

@@ -27,6 +27,7 @@
 
 #include "klib/kvec.h" // C dynamic vector
 #include "klib/khash.h" // C hash table/dictionary
+#include "rmap.h"
 
 // MAXIMUM # READS = 2^31 (~2bn)
 typedef struct {
@@ -44,8 +45,6 @@ typedef kvec_t(readPos) matchVec;
 
 typedef kvec_t(posPair) pairVec;
 
-typedef kvec_t(uint8_t) byteVec;
-
 
 // creates uint32(qgram hash):kvec<readNum,pos> hash
 KHASH_MAP_INIT_INT(qgramHash, matchVec);
@@ -62,6 +61,6 @@ static kh_inline khint_t qgram_hash(uint8_t *s, int k)
   return h;
 }
 
-int hash_rmap(rmap map, int q, int threshold, int max_qgrams, int readLimit);
+int hash_rmap(byteVec* frags, size_t n_frags, int q, int threshold, int max_qgrams, int readLimit);
 
 #endif /* __HASH_H__ */
