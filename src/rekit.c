@@ -30,6 +30,7 @@
 
 #include "bnx.h"
 #include "rmap.h"
+#include "hash.h"
 #include "lsh.h"
 #include "dtw.h"
 
@@ -38,17 +39,23 @@ void usage() {
   printf("Commands:\n");
   printf("  ovl: compute MinHash/pairwise Jaccard similarity\n");
   printf("  aln: compute dynamic time warping glocal (overlap) alignments\n");
+  printf("  hsh: compute full q-gram intersection using a hash table\n");
   printf("Options:\n");
   printf("  ovl <bnx> <q> <h> <seed> <threshold> <max_qgram_hits>\n");
   printf("    bnx: A single BNX file containing rmaps\n");
   printf("    q: Size of q-gram/k-mer to hash\n");
   printf("    h: Number of hash functions to apply\n");
   printf("    seed: Seed to random number generator\n");
-  printf("    threshold: Minimum number of k-mers to declare a match\n");
+  printf("    threshold: Minimum number of q-grams to declare a match\n");
   printf("    max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored\n");
   printf("  aln <bnx> <threshold>\n");
   printf("    bnx: A single BNX file containing rmaps\n");
   printf("    threshold: Score threshold to report alignment\n");
+  printf("  hsh <bnx> <q> <threshold> <max_qgram_hits>\n");
+  printf("    bnx: A single BNX file containing rmaps\n");
+  printf("    q: Size of q-gram/k-mer to hash\n");
+  printf("    threshold: Minimum number of q-grams to declare a match\n");
+  printf("    max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -100,6 +107,18 @@ int main(int argc, char *argv[]) {
     int threshold = atoi(argv[3]);
 
     int ret = dtw_rmap(map, threshold);
+  }
+  else if(strcmp(command, "hsh") == 0) {
+    if(argc < 6) {
+      printf("Not enough arguments for 'aln'.\n\n");
+      usage();
+      return -1;
+    }
+    int q = atoi(argv[3]);
+    int threshold = atoi(argv[4]);
+    int max_qgrams = atoi(argv[5]);
+
+    int ret = hash_rmap(map, q, threshold, max_qgrams, -1);
   }
 
   return ret;

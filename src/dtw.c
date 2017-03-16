@@ -93,7 +93,7 @@ int dtw_rmap(rmap map, int threshold) {
        * - |f0 - f1| = 2000: -1
        */
       path.n = 0; // reset path vec
-      result aln = align(query.a, target.a, qlen, tlen, &path, -1, -1, 1000); 
+      result aln = ovl_align(query.a, target.a, qlen, tlen, &path, -1, -1, 1000); 
       if(aln.failed) {
         printf("q %d -- t %d FAILED\n", q, t);
         return -1;
@@ -115,7 +115,12 @@ int dtw_rmap(rmap map, int threshold) {
   printf("# Computed DTW alignments for %d rmaps in %d seconds\n", n_rmaps, (t1-t0));
 }
 
-result align(float* query, float* target, size_t qlen, size_t tlen, pathvec *path, int8_t ins_score, int8_t del_score, float neutral_deviation) {
+/*
+ * Overlap dynamic programming (time warping) alignment
+ *
+ * First row and column are initialized to zero, and alignment must reach either the last row or column
+ */
+result ovl_align(float* query, float* target, size_t qlen, size_t tlen, pathvec *path, int8_t ins_score, int8_t del_score, float neutral_deviation) {
   if(tlen == 0 || qlen == 0) {
     result res;
     res.failed = 1;
@@ -135,9 +140,9 @@ result align(float* query, float* target, size_t qlen, size_t tlen, pathvec *pat
 
   int x, y;
 
-  // initialize matrix for full-query, partial-target alignment
+  // initialize first row and first column for local alignment
   for(y = 1; y <= qlen; y++) {
-    score_matrix[y][0] = LOW;
+    score_matrix[y][0] = 0; // LOW for full-query, partial-target alignment
   }
   for(x = 0; x <= tlen; x++) {
     score_matrix[0][x] = 0;
@@ -148,15 +153,14 @@ result align(float* query, float* target, size_t qlen, size_t tlen, pathvec *pat
 
   for(y = 0; y < qlen; y++) {
     for(x = 0; x < tlen; x++) {
-      // match
+      // resetting any negative values to 0 is what makes this local alignment - if you don't do that it will be at least semi-global
       match = score_matrix[y][x] + score(query[y], target[x], neutral_deviation);
-      // ins
       ins = score_matrix[y][x+1] + ins_score;
-      // del
       del = score_matrix[y+1][x] + del_score;
+
       //printf("%i,%i: match %f, ins %f, del %f, score(%f,%f) %f\n", x, y, match, ins, del, query[y], target[x], score(query[y], target[x], neutral_deviation));
 
-      // compare
+      // pick the highest-scoring move to make
       if(match >= ins && match >= del) {
         score_matrix[y+1][x+1] = match;
         direction_matrix[y+1][x+1] = MATCH;
@@ -194,19 +198,24 @@ result align(float* query, float* target, size_t qlen, size_t tlen, pathvec *pat
   }
   */
 
-  // compute maximum score position (anywhere in last row)
+  // compute maximum score position (anywhere in last row or column to capture overlaps)
   int max_x = 0, max_y = 0;
-  max_x = 0;
-  max_y = qlen;
   for(x = 1; x <= tlen; x++) {
-    if(score_matrix[max_y][x] > score_matrix[max_y][max_x]) {
+    if(score_matrix[qlen][x] > score_matrix[max_y][max_x]) {
       max_x = x;
+      max_y = qlen;
+    }
+  }
+  for(y = 1; y <= qlen; y++) {
+    if(score_matrix[y][tlen] > score_matrix[max_y][max_x]) {
+      max_x = tlen;
+      max_y = y;
     }
   }
 
   x = max_x;
   y = max_y;
-  while(y > 0) {
+  while(y > 0 && x > 0) {
     kv_push(uint8_t, *path, direction_matrix[y][x]);
     if(direction_matrix[y][x] == MATCH) {
       x--;

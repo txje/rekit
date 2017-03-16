@@ -22,38 +22,46 @@
  * SOFTWARE.
  */
 
-#ifndef __DTW_H__
-#define __DTW_H__
+#ifndef __HASH_H__
+#define __HASH_H__
 
 #include "klib/kvec.h" // C dynamic vector
-#include "rmap.h"
+#include "klib/khash.h" // C hash table/dictionary
 
-typedef kvec_t(uint8_t) pathvec;
+// MAXIMUM # READS = 2^31 (~2bn)
+typedef struct {
+  uint32_t readNum; // last bit 0 if fw, 1 if rv (same as alternating fw/rv) [fw read n = n*2, rv read n = n*2+1]
+  // in practice, we only hash the fw strand, and do lookup by fw and rv, so right now these will always end in 0 (readNum%2 == 0)
+  uint32_t pos;
+} readPos;
 
-typedef struct aln_result {
-  float score;
-  uint32_t qstart;
-  uint32_t qend;
-  uint32_t tstart;
-  uint32_t tend;
-  uint8_t failed; // boolean flag
-} result;
+typedef struct {
+  uint32_t qpos;
+  uint32_t tpos;
+} posPair;
 
-static uint8_t MATCH = 0, INS = 1, DEL = 2;
+typedef kvec_t(readPos) matchVec;
 
-static float LOW = -1e38; // the order of the lowest possible 4-byte (single-precision) float
+typedef kvec_t(posPair) pairVec;
+
+typedef kvec_t(uint8_t) byteVec;
 
 
-static float score(float a, float b, float neutral_deviation) {
-  float diff = (a > b ? (a - b) : (b - a));
-  // score is:
-  // 1 if fragments are the same size
-  // 0 if fragments differ by neutral deviation
-  // -1 if size difference is 2x neutral deviation
-  return 1 - (diff / neutral_deviation);
+// creates uint32(qgram hash):kvec<readNum,pos> hash
+KHASH_MAP_INIT_INT(qgramHash, matchVec);
+
+// creates uint32(target read id):kvec<qpos,tpos> hash
+KHASH_MAP_INIT_INT(matchHash, pairVec);
+
+// similar to klib's khash.h, except we explicitly limit the length - it doesn't have to be null-terminated
+static kh_inline khint_t qgram_hash(uint8_t *s, int k)
+{
+  int i;
+  khint_t h = (khint_t)*s;
+  if (h) for (i = 1 ; i < k; i++) h = (h << 5) - h + (khint_t)*(s+i);
+  return h;
 }
 
-int dtw_rmap(rmap map, int threshold);
-result ovl_align(float* query, float* target, size_t qlen, size_t tlen, pathvec *path, int8_t ins_score, int8_t del_score, float neutral_deviation);
+int hash_rmap(rmap map, int q, int threshold, int max_qgrams, int readLimit);
 
-#endif /* __DTW_H__ */
+#endif /* __HASH_H__ */

@@ -33,6 +33,7 @@
 #include "bnx.h"
 #include "rmap.h"
 #include "lsh.h"
+#include "hash.h"
 
 
 /*
@@ -92,7 +93,7 @@ Min* minhash (nickVec nicks, int k, int h, uint32_t denom, uint32_t hash_seeds[]
 
 // if reverse is true (1), forward and reverse signatures will be adjacent such that
 // signature of read X forward is at index (2*X), and reverse is (2*X + 1)
-void hash_signatures(rmap map, int k, int h, uint32_t hash_seeds[], khash_t(minDict) **min_db, minVec *min_queries, int readLimit) {
+void hash_signatures(rmap map, int k, int h, uint32_t hash_seeds[], khash_t(qgramHash) **min_db, minVec *min_queries, int readLimit) {
 
   int l, i, ret_val;
   uint32_t denom = 100; // bin fragments by 100bp
@@ -108,14 +109,14 @@ void hash_signatures(rmap map, int k, int h, uint32_t hash_seeds[], khash_t(minD
     // only add hashes to the lookup dictionary if |sub-frags| >= k, otherwise they would be UINT32_MAX
     if(min_db != NULL && kv_size(kv_A(map.fragments, f).nicks) >= k) {
       for(i = 0; i < h; i++) {
-        bin = kh_put(minDict, min_db[i], m[i].hash, &ret_val);
+        bin = kh_put(qgramHash, min_db[i], m[i].hash, &ret_val);
         if(ret_val == 1) { // bin is empty (unset)
           kv_init(kh_value(min_db[i], bin)); // kh_value should already be defined as type matchVec
         }
-        readMin r;
+        readPos r;
         r.readNum = (f << 1);
         r.pos = m[i].pos;
-        kv_push(readMin, kh_value(min_db[i], bin), r);
+        kv_push(readPos, kh_value(min_db[i], bin), r);
       }
     }
     if(min_queries != NULL) {
@@ -133,10 +134,10 @@ void hash_signatures(rmap map, int k, int h, uint32_t hash_seeds[], khash_t(minD
   }
 }
 
-int free_lsh(khash_t(minDict) **min_db, int h, minVec *min_queries) {
+int free_lsh(khash_t(qgramHash) **min_db, int h, minVec *min_queries) {
   int i;
   for(i = 0; i < h; i++)
-    kh_destroy(minDict, min_db[i]);
+    kh_destroy(qgramHash, min_db[i]);
   kv_destroy(*min_queries);
   return 0;
 }
@@ -159,9 +160,9 @@ int ovl_rmap(rmap map, int q, int h, int seed, int threshold, int max_qgrams, in
 
   // read BNX file, construct hash, including only forward direction
   // -- maybe assess doing this the opposite way at a later date, I'm not sure which will be faster
-  khash_t(minDict) *min_db[h];
+  khash_t(qgramHash) *min_db[h];
   for(i = 0; i < h; i++) {
-    min_db[i] = kh_init(minDict); // allocate hash table
+    min_db[i] = kh_init(qgramHash); // allocate hash table
   }
   minVec min_queries;
   kv_init(min_queries);
@@ -180,7 +181,7 @@ int ovl_rmap(rmap map, int q, int h, int seed, int threshold, int max_qgrams, in
   khint_t bin; // hash bin (result of kh_put, kh_get)
   Min *qmin;
   matchVec matches;
-  khash_t(overlapDict) *overlaps;
+  khash_t(matchHash) *overlaps;
   for(i = 0; i < min_queries.n/2; i++) {
     for(qrev = 0; qrev <= 1; qrev++) {
       if(qrev == 1) {
@@ -194,9 +195,9 @@ int ovl_rmap(rmap map, int q, int h, int seed, int threshold, int max_qgrams, in
       //   and it won't hit anything because we didn't put empties in the lookup dict
       qmin = (Min*)(kv_A(min_queries, qidx));
 
-      overlaps = kh_init(overlapDict); // allocate hash table
+      overlaps = kh_init(matchHash); // allocate hash table
       for(j = 0; j < h; j++) {
-        bin = kh_get(minDict, min_db[j], qmin[j].hash);
+        bin = kh_get(qgramHash, min_db[j], qmin[j].hash);
         if(bin == kh_end(min_db[j])) // key not found, IDK what happens if you don't test this
           continue;
         matches = kh_val(min_db[j], bin);
@@ -204,7 +205,7 @@ int ovl_rmap(rmap map, int q, int h, int seed, int threshold, int max_qgrams, in
           continue;
         }
         for(m = 0; m < matches.n; m++) {
-          bin = kh_put(overlapDict, overlaps, matches.a[m].readNum>>1, &ret_val); // >>1 removes the fw/rv bit, which is always fw(0) right now
+          bin = kh_put(matchHash, overlaps, matches.a[m].readNum>>1, &ret_val); // >>1 removes the fw/rv bit, which is always fw(0) right now
           if(ret_val == 1) { // bin is empty (unset)
             kv_init(kh_value(overlaps, bin)); // kh_value should already be defined as type matchVec
           }
@@ -215,7 +216,7 @@ int ovl_rmap(rmap map, int q, int h, int seed, int threshold, int max_qgrams, in
         }
       }
       // count hits and compute offset for each target
-      offsetVec offsets;
+      pairVec offsets;
       khint_t iter;
       // from the definition of kh_foreach
       for (iter = kh_begin(overlaps); iter != kh_end(overlaps); ++iter) {
@@ -239,9 +240,9 @@ int ovl_rmap(rmap map, int q, int h, int seed, int threshold, int max_qgrams, in
             printf(",%d:%d", offsets.a[j].qpos, offsets.a[j].tpos);
           printf("\n");
         }
-        kv_destroy(offsets);
+        kv_destroy(offsets); // this frees each value vector after its been evaluated
       }
-      kh_destroy(overlapDict, overlaps);
+      kh_destroy(matchHash, overlaps); // this frees the encompassing hash when we're done
     }
   }
 
