@@ -28,6 +28,8 @@
 #include <stdint.h>
 #include <string.h>
 #include "klib/kvec.h"
+#include "klib/kseq.h"
+#include "klib/kstring.h"
 
 #define MAX_ENZYME_NAME_SIZE 31
 #define MAX_REC_SEQ_SIZE 127
@@ -47,8 +49,12 @@ typedef struct {
 
 typedef kvec_t(nick) nickVec;
 
-typedef kvec_t(uint32_t) u32Vec;
 typedef kvec_t(uint8_t) byteVec;
+
+typedef kvec_t(uint32_t) u32Vec;
+typedef kvec_t(u32Vec*) fragVec;
+
+typedef kvec_t(kstring_t*) seqVec;
 
 
 typedef struct {  /* molecule, contig or chromosome */
