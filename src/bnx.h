@@ -28,16 +28,8 @@
 #include "rmap.h"
 #include "io_utils.h"
 
-enum file_format {  /* of restriction map */
-	FORMAT_UNKNOWN = 0,
-	FORMAT_TXT,   /* simple text, with one molecule/contig in each line */
-	FORMAT_TSV,   /* tab-separated values, with VCF-like comment header  */
-	FORMAT_BNX,   /* .bnx file for molecules, by BioNano inc. */
-	FORMAT_CMAP,  /* .cmap file for consensus map, by BioNano inc. */
-};
-
-int bn_read_header(struct file *fp, int *format, rmap *map);
-int bn_read(struct file *fp, int format, fragment *f);
+int bn_read_header(struct file *fp, rmap *map);
+int bn_read(struct file *fp, fragment *f);
 static int bn_read_bnx(struct file *fp, fragment *f);
 
 rmap bn_load(const char *filename);

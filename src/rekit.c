@@ -27,9 +27,11 @@
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
+#include <getopt.h>
 
 #include "bnx.h"
 #include "rmap.h"
+#include "cmap.h"
 #include "hash.h"
 #include "lsh.h"
 #include "dtw.h"
@@ -42,25 +44,25 @@ void usage() {
   printf("  aln: compute dynamic time warping glocal (overlap) alignments\n");
   printf("  hsh: compute full q-gram intersection using a hash table\n");
   printf("  sim: simulate rmaps\n");
+  printf("  dig: in silico digestion\n");
   printf("Options:\n");
-  printf("  ovl <bnx> <q> <h> <seed> <threshold> <max_qgram_hits>\n");
-  printf("    bnx: A single BNX file containing rmaps\n");
-  printf("    q: Size of q-gram/k-mer to hash\n");
-  printf("    h: Number of hash functions to apply\n");
+  printf("  ovl -bqht seed max_qgram_hits\n");
+  printf("  aln -t score_threshold\n");
+  printf("  hsh -bqt <max_qgram_hits>\n");
+  printf("  sim -frm <pfrag> <pnick> <pshear> <stretch_mean> <stretch_std> <resolution> <coverage>\n");
+  printf("  dig -frm\n");
+  printf("    -b: bnx: A single BNX file containing rmaps\n");
+  printf("    -c: cmap: A single CMAP file\n");
+  printf("    -f: fasta: Reference sequence to simulate from\n");
+  printf("    -r: cutseq: Recognition/label site sequence\n");
+  printf("    -m: mod: MOD file mapping reference to background\n");
+  printf("    -q: Size of q-gram/k-mer to hash\n");
+  printf("    -h: Number of hash functions to apply\n");
   printf("    seed: Seed to random number generator\n");
-  printf("    threshold: Minimum number of q-grams to declare a match\n");
+  printf("    -t: threshold: Minimum number of q-grams to declare a match\n");
   printf("    max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored\n");
-  printf("  aln <bnx> <threshold>\n");
-  printf("    bnx: A single BNX file containing rmaps\n");
   printf("    threshold: Score threshold to report alignment\n");
-  printf("  hsh <bnx> <q> <threshold> <max_qgram_hits>\n");
-  printf("    bnx: A single BNX file containing rmaps\n");
-  printf("    q: Size of q-gram/k-mer to hash\n");
-  printf("    threshold: Minimum number of q-grams to declare a match\n");
-  printf("    max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored\n");
-  printf("  sim <bnx> <fasta> <pfrag> <pnick> <pshear> <stretch_mean> <stretch_std> <resolution> <coverage>\n");
-  printf("    bnx: *Output* file in BNX format\n");
-  printf("    fasta: Reference sequence to simulate from\n");
+  printf("  sim options:\n");
   printf("    pfrag: Probability of genome fragmentation per locus\n");
   printf("    pnick: Probability of nick at true restriction site\n");
   printf("    pshear: Probability of false-positive nicking (labeling/shearing)\n");
@@ -134,25 +136,102 @@ u32Vec* nicks_to_frags(rmap *map, int readLimit, int ltrim, int rtrim, uint32_t 
 
 
 int main(int argc, char *argv[]) {
-  if(argc < 3) {
-    printf("Not enough arguments - specify a command and BNX file first.\n\n");
-    usage();
-    return -1;
+
+  char* bnx_file = NULL; // .bnx file path/name
+  char* fasta_file = NULL; // .fasta file path/name
+  char* cmap_file = NULL; // .cmap file path/name (either reference or consensus)
+  char* restriction_seq = NULL; // restriction enzyme or label recognition sequence (must also be reverse complemented if not symmetrical)
+  char* mod = NULL; // MOD file path/name
+  int q = 5; // q-gram size
+  int h = 10; // number of hashes
+  int verbose = 0;
+  int threshold = 0;
+  int seed = 0; // made this up
+  int max_qgrams = 1000; // made this up
+
+  int opt;
+  opterr = 0;
+  while ((opt = getopt(argc, argv, "b:c:q:h:f:r:t:m:v")) != -1) {
+    switch (opt) {
+      case 'b':
+        bnx_file = optarg;
+        break;
+      case 'c':
+        cmap_file = optarg;
+        break;
+      case 'q':
+        q = atoi(optarg);
+        break;
+      case 'h':
+        h = atoi(optarg);
+        break;
+      case 'f':
+        fasta_file = optarg;
+        break;
+      case 'r':
+        restriction_seq = optarg;
+        break;
+      case 't':
+        threshold = atoi(optarg);
+        break;
+      case 'm':
+        mod = optarg;
+        break;
+      case 'v':
+        verbose = 1;
+        break;
+      case '?':
+        if (optopt == 'b' || optopt == 'c' || optopt == 'q' || optopt == 'h' || optopt == 'r' || optopt == 'f' || optopt == 't' || optopt == 'm')
+          fprintf(stderr, "Option -%c requires an argument.\n", optopt);
+        else if (isprint (optopt))
+          fprintf(stderr, "Unknown option `-%c'.\n", optopt);
+        else
+          fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
+        return 1;
+      default:
+        usage();
+        return 1;
+    }
   }
-  char *command = argv[1];
-  char *bnx_file = argv[2];
+
+  cmap c = read_cmap(cmap_file);
+  printf("CMAP '%s': %d maps w/%d recognition sites\n", cmap_file, c.n_maps, c.n_rec_seqs);
+  write_cmap(&c, fopen("test.cmap", "w"));
+
+  int index;
+  char* command;
+  for (index = optind; index < argc; index++) {
+    if(index == optind) {
+      command = argv[index];
+    }
+  }
+  printf("command: %s\n", command);
 
   rmap map;
   size_t n_frags;
 
-  if(strcmp(command, "sim") != 0) {
+  if(strcmp(command, "dig") == 0) {
+    printf("-- in silico digest --\n");
+    if(fasta_file == NULL) {
+      fprintf(stderr, "FASTA file required (-f)\n");
+      return 1;
+    }
+    if(restriction_seq == NULL) {
+      fprintf(stderr, "Restriction sequence is required (-r)\n");
+      return 1;
+    }
+    //cmap map = digest(fasta_file, restriction_seq, mod);
+    //write_cmap(&map, stdout);
+  }
+
+  if(strcmp(command, "sim") == 0) {
     // test if files exist
     FILE* fp;
     fp = fopen(bnx_file, "r");
 
     if(fp == NULL) {
-      printf("File '%s' does not exist\n", bnx_file);
-      return -1;
+      fprintf(stderr, "File '%s' does not exist\n", bnx_file);
+      return 1;
     }
     fclose(fp);
 
@@ -174,11 +253,6 @@ int main(int argc, char *argv[]) {
       usage();
       return -1;
     }
-    int q = atoi(argv[3]);
-    int h = atoi(argv[4]);
-    int seed = atoi(argv[5]);
-    int threshold = atoi(argv[6]);
-    int max_qgrams = atoi(argv[7]);
 
     // convert map of nicks to a simple array of byte vectors representing subfragment lengths
     // discretize by 1kb if doing any hashing, do no dicretization if doing DTW
@@ -200,7 +274,6 @@ int main(int argc, char *argv[]) {
       usage();
       return -1;
     }
-    int threshold = atoi(argv[3]);
 
     // convert map of nicks to a simple array of byte vectors representing subfragment lengths
     // discretize by 1kb if doing any hashing, do no dicretization if doing DTW
@@ -222,9 +295,6 @@ int main(int argc, char *argv[]) {
       usage();
       return -1;
     }
-    int q = atoi(argv[3]);
-    int threshold = atoi(argv[4]);
-    int max_qgrams = atoi(argv[5]);
 
     // convert map of nicks to a simple array of byte vectors representing subfragment lengths
     // discretize by 1kb if doing any hashing, do no dicretization if doing DTW

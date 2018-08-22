@@ -1,3 +1,4 @@
+#include <stdint.h>
 
 /*
 
@@ -17,16 +18,18 @@ typedef struct label {
   uint32_t position;
   float stdev;
   uint16_t coverage;
+  uint8_t channel;
   uint16_t occurrence;
-}
+} label;
 
 typedef struct cmap {
-  label*** labels; // nested list by ref, recognition site, then position
+  label** labels; // nested list by ref, then position
   size_t n_maps;
   size_t* ref_lengths;
-  size_t** map_lengths; // nested list by ref then recognition site
+  size_t* map_lengths;
   char** rec_seqs;
   size_t n_rec_seqs;
 } cmap;
 
-int write_cmap(cmap *c, char* fn);
+int write_cmap(cmap *c, FILE* fp);
+cmap read_cmap(const char* fn);
