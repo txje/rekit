@@ -27,26 +27,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zlib.h>
 #include "klib/kvec.h"
+#include "rmap.h"
 #include "digest.h"
+
+#ifndef _kseq_
+#define _kseq_
+
+#include "klib/kseq.h"
+
+// init kseq struct
+KSEQ_INIT(gzFile, gzread)
+
+#endif
 
 int digest(char *seq, size_t seq_len, char **motifs, size_t n_motifs, float digest_rate, float shear_rate, int nlimit, u32Vec *sizes) {
   srand(time(NULL));
 
-  // find first non-N character in seq
-  int start_pos = 0;
-  while(start_pos < seq_len && seq[start_pos] == 'N') {
-    start_pos++;
-  }
-  int last = start_pos;
-  //printf("Non-N start position: %d\n", start_pos);
-
-  if(start_pos >= seq_len) {
-    return 1; // all N sequence
-  }
-
   // go through sequence
-  int nstart = -1;
   int i, j, m;
 
   // create a crazy triple ref holder for kmer/rc as we loop through the sequence
@@ -59,25 +58,8 @@ int digest(char *seq, size_t seq_len, char **motifs, size_t n_motifs, float dige
     }
   }
 
-  for(i = start_pos; i < seq_len; i++) {
+  for(i = 0; i < seq_len; i++) {
     //printf("At pos %d\n", i);
-
-    // cut at strings of Ns at least <nlimit> long
-    // and EXCISE THE N PORTION
-    if(seq[i] == 'N') {
-      if(nstart == -1) {
-        nstart = i;
-      }
-      continue;
-    } else {
-      if(nstart != -1 && i - nstart >= nlimit) {
-        if(nstart - last > 0) {
-          kv_push(uint32_t, *sizes, (uint32_t)(nstart - last));
-        }
-        last = i;
-      }
-      nstart = -1;
-    }
 
     // see if current locus matches any motifs
     for(m = 0; m < n_motifs; m++) {
@@ -116,8 +98,8 @@ int digest(char *seq, size_t seq_len, char **motifs, size_t n_motifs, float dige
             mers[1][m][mlen-j-1] = 'N';
             break;
           default:
-            printf("Error: Invalid character encountered at seq pos %d: %c\n", i+j, seq[i+j]);
-            return 2;
+            fprintf(stderr, "Error: Invalid character encountered at seq pos %d: %c\n", i+j, seq[i+j]);
+            return 1;
         }
       }
       //printf("Comparing %s and %s (rc) to motif %s (%dbp)\n", mers[0][m], mers[1][m], motifs[m], mlen);
@@ -125,20 +107,48 @@ int digest(char *seq, size_t seq_len, char **motifs, size_t n_motifs, float dige
       float digest_chance = (double)rand() / (double)RAND_MAX;
       float shear_chance = (double)rand() / (double)RAND_MAX;
       //printf("Random number %f < rate %f?\n", rnd, digest_rate);
-      if(i - last > 0 && (shear_chance < shear_rate || ((strcmp(motifs[m], mers[0][m]) == 0 || strcmp(motifs[m], mers[1][m]) == 0) && digest_chance < digest_rate))) {
-        kv_push(uint32_t, *sizes, (uint32_t)(i - last));
-        last = i;
+      if(shear_chance < shear_rate || ((strcmp(motifs[m], mers[0][m]) == 0 || strcmp(motifs[m], mers[1][m]) == 0) && digest_chance <= digest_rate)) {
+        kv_push(uint32_t, *sizes, (uint32_t)i);
         break; // stop checking motifs
       }
     }
   }
 
-  if((nstart == -1 || i - nstart < nlimit) && i - last > 0) {
-    kv_push(uint32_t, *sizes, (uint32_t)(i - last));
-  } else if(nstart - last > 0){
-    kv_push(uint32_t, *sizes, (uint32_t)(nstart - last));
+  kv_push(uint32_t, *sizes, (uint32_t)i);
+
+  return 0;
+}
+
+cmap digest_fasta(char* fasta_file, char** motifs, size_t n_motifs) {
+  cmap c;
+  init_cmap(&c);
+  c.rec_seqs = motifs;
+  c.n_rec_seqs = n_motifs;
+
+  gzFile gzfp;
+  kseq_t *seq;
+  int l;
+
+  gzfp = gzopen(fasta_file, "r");
+  if(!gzfp) {
+    fprintf(stderr, "File '%s' not found\n", fasta_file);
+    return c;
+  }
+  seq = kseq_init(gzfp);
+
+  int refid = 0;
+  while ((l = kseq_read(seq)) >= 0) {
+    // name: seq->name.s, seq: seq->seq.s, length: l
+    printf("Reading %s (%i bp).\n", seq->name.s, l);
+    u32Vec labels;
+    kv_init(labels);
+    digest(seq->seq.s, l, motifs, n_motifs, 1.0, 0.0, 1000000000, &labels); // 1.0 true digest rate, 0.0 random shear rate (perfect)
+    printf("Produced %d labels\n", kv_size(labels));
+    add_map(&c, labels.a, kv_size(labels), 1); // channel 1
   }
 
-  // ended without incident
-  return 0;
+  gzclose(gzfp);
+  kseq_destroy(seq);
+
+  return c;
 }

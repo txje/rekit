@@ -1,3 +1,6 @@
+#ifndef _cmap_h_
+#define _cmap_h_
+
 #include <stdint.h>
 
 /*
@@ -33,3 +36,7 @@ typedef struct cmap {
 
 int write_cmap(cmap *c, FILE* fp);
 cmap read_cmap(const char* fn);
+int add_map(cmap* c, uint32_t* positions, size_t n_pos, uint8_t channel);
+void init_cmap(cmap* c);
+
+#endif

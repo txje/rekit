@@ -36,6 +36,7 @@
 #include "lsh.h"
 #include "dtw.h"
 #include "sim.h"
+#include "digest.h"
 
 void usage() {
   printf("Usage: rekit [command] [options]\n");
@@ -194,9 +195,10 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  cmap c = read_cmap(cmap_file);
-  printf("CMAP '%s': %d maps w/%d recognition sites\n", cmap_file, c.n_maps, c.n_rec_seqs);
-  write_cmap(&c, fopen("test.cmap", "w"));
+  // CMAP test
+  //cmap c = read_cmap(cmap_file);
+  //printf("CMAP '%s': %d maps w/%d recognition sites\n", cmap_file, c.n_maps, c.n_rec_seqs);
+  //write_cmap(&c, fopen("test.cmap", "w"));
 
   int index;
   char* command;
@@ -220,8 +222,11 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Restriction sequence is required (-r)\n");
       return 1;
     }
-    //cmap map = digest(fasta_file, restriction_seq, mod);
-    //write_cmap(&map, stdout);
+    // make a list of restriction seqs - that's what digest wants
+    char** rseqs = malloc(1 * sizeof(char*));
+    rseqs[0] = restriction_seq;
+    cmap c = digest_fasta(fasta_file, rseqs, 1);
+    write_cmap(&c, stdout);
   }
 
   if(strcmp(command, "sim") == 0) {

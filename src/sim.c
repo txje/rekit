@@ -44,21 +44,22 @@
 #include <math.h>
 #include <float.h>
 #include <time.h>
-#include "klib/kseq.h"
+#include <zlib.h>
 #include "klib/kvec.h"
 #include "klib/kstring.h"
 #include "rmap.h"
 #include "digest.h"
 #include "sim.h"
 
+#ifndef _kseq_
+#define _kseq_
 
-// have to reorder params to make this work with kseq
-int fileread(FILE* f, char* buffer, int size) {
-  return fread(buffer, 1, size, f);
-}
+#include "klib/kseq.h"
 
 // init kseq struct
-KSEQ_INIT(FILE*, fileread);
+KSEQ_INIT(gzFile, gzread)
+
+#endif
 
 
 void fragment_seq(kstring_t* seq, seqVec* frag_seqs, float frag_prob) {
@@ -145,7 +146,7 @@ void simulate_bnx(char* ref_fasta, float frag_prob, float nick_prob, float shear
 
   srand(time(NULL));
 
-  FILE* fp;
+  gzFile fp;
   kseq_t* seq;
   uint32_t i;
   int j;
@@ -158,7 +159,7 @@ void simulate_bnx(char* ref_fasta, float frag_prob, float nick_prob, float shear
   seqVec frag_seqs;
   kv_init(frag_seqs);
 
-  fp = fopen(ref_fasta, "r");
+  fp = gzopen(ref_fasta, "r");
   seq = kseq_init(fp);
   printf("Fasta file: %s\n", ref_fasta);
   printf("Fragmenting and digesting up to %fx coverage\n", coverage*10);
@@ -179,7 +180,7 @@ void simulate_bnx(char* ref_fasta, float frag_prob, float nick_prob, float shear
     }
   }
   kseq_destroy(seq);
-  fclose(fp);
+  gzclose(fp);
   printf("Produced %d read fragments.\n", kv_size(fragments));
   fflush(stdout);
   
