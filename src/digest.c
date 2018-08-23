@@ -139,11 +139,11 @@ cmap digest_fasta(char* fasta_file, char** motifs, size_t n_motifs) {
   int refid = 0;
   while ((l = kseq_read(seq)) >= 0) {
     // name: seq->name.s, seq: seq->seq.s, length: l
-    printf("Reading %s (%i bp).\n", seq->name.s, l);
+    //printf("Reading %s (%i bp).\n", seq->name.s, l);
     u32Vec labels;
     kv_init(labels);
     digest(seq->seq.s, l, motifs, n_motifs, 1.0, 0.0, 1000000000, &labels); // 1.0 true digest rate, 0.0 random shear rate (perfect)
-    printf("Produced %d labels\n", kv_size(labels));
+    //printf("Produced %d labels\n", kv_size(labels));
     add_map(&c, labels.a, kv_size(labels), 1); // channel 1
   }
 

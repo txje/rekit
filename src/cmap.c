@@ -190,7 +190,7 @@ cmap read_cmap(const char *fn) {
 	}
   printf("Reading lines...\n");
 	while (read_cmap_line(fp, &c) == 0) {
-		//kv_push(fragment, c.fragments, frag);
+    // we're just looping through all the lines
 	}
   printf("Done reading lines...\n");
 
@@ -211,7 +211,6 @@ void init_cmap(cmap* c) {
 int add_map(cmap* c, uint32_t* positions, size_t n_pos, uint8_t channel) {
   int mapid = c->n_maps;
   c->n_maps++;
-  printf("realloc things\n");
   c->ref_lengths = realloc(c->ref_lengths, c->n_maps * sizeof(size_t));
   c->map_lengths = realloc(c->map_lengths, c->n_maps * sizeof(size_t));
   c->labels = realloc(c->labels, c->n_maps * sizeof(label*));
@@ -219,15 +218,11 @@ int add_map(cmap* c, uint32_t* positions, size_t n_pos, uint8_t channel) {
     fprintf(stderr, "Unable to allocate memory\n");
     return 1;
   };
-  printf("set lengths\n");
   c->ref_lengths[mapid] = positions[n_pos - 1];
-  printf("ref length: %d\n", positions[n_pos - 1]);
   c->map_lengths[mapid] = n_pos - 1;
-  printf("map length: %d\n", n_pos - 1);
   c->labels[mapid] = malloc(n_pos * sizeof(label));
   int i;
   for(i = 0; i < n_pos; i++) {
-    printf("setting label %d position: %d\n", i, positions[i]);
     c->labels[mapid][i].position = positions[i];
     if(i < n_pos - 1) {
       c->labels[mapid][i].stdev = 1.0;

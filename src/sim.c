@@ -47,7 +47,6 @@
 #include <zlib.h>
 #include "klib/kvec.h"
 #include "klib/kstring.h"
-#include "rmap.h"
 #include "digest.h"
 #include "sim.h"
 

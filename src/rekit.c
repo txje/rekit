@@ -29,13 +29,12 @@
 #include <time.h>
 #include <getopt.h>
 
-#include "bnx.h"
-#include "rmap.h"
 #include "cmap.h"
-#include "hash.h"
-#include "lsh.h"
-#include "dtw.h"
-#include "sim.h"
+#include "bnx.h"
+//#include "hash.h"
+//#include "lsh.h"
+//#include "dtw.h"
+//#include "sim.h"
 #include "digest.h"
 
 void usage() {
@@ -44,7 +43,7 @@ void usage() {
   printf("  ovl: compute MinHash/pairwise Jaccard similarity\n");
   printf("  aln: compute dynamic time warping glocal (overlap) alignments\n");
   printf("  hsh: compute full q-gram intersection using a hash table\n");
-  printf("  sim: simulate rmaps\n");
+  printf("  sim: simulate molecules\n");
   printf("  dig: in silico digestion\n");
   printf("Options:\n");
   printf("  ovl -bqht seed max_qgram_hits\n");
@@ -52,7 +51,7 @@ void usage() {
   printf("  hsh -bqt <max_qgram_hits>\n");
   printf("  sim -frm <pfrag> <pnick> <pshear> <stretch_mean> <stretch_std> <resolution> <coverage>\n");
   printf("  dig -frm\n");
-  printf("    -b: bnx: A single BNX file containing rmaps\n");
+  printf("    -b: bnx: A single BNX file containing molecules\n");
   printf("    -c: cmap: A single CMAP file\n");
   printf("    -f: fasta: Reference sequence to simulate from\n");
   printf("    -r: cutseq: Recognition/label site sequence\n");
@@ -74,11 +73,11 @@ void usage() {
 }
 
 /*
- * Takes a set of rmaps (from one BNX file)
+ * Takes a set of molecules (from one BNX file)
  * and returns an array of byteVecs, one for each fragment
  * where the values are discretized, potentially trimmed, sub-fragment sizes (between nick sites)
  */
-byteVec* nicks_to_frags_bin(rmap *map, uint32_t denom, int readLimit, int ltrim, int rtrim, uint32_t min) {
+byteVec* nicks_to_frags_bin(molecules *map, uint32_t denom, int readLimit, int ltrim, int rtrim, uint32_t min) {
   byteVec *frags = (byteVec*)malloc(sizeof(byteVec) * kv_size(map->fragments));
   int i;
   uint32_t f = 0;
@@ -107,7 +106,7 @@ byteVec* nicks_to_frags_bin(rmap *map, uint32_t denom, int readLimit, int ltrim,
   return frags;
 }
 
-u32Vec* nicks_to_frags(rmap *map, int readLimit, int ltrim, int rtrim, uint32_t min) {
+u32Vec* nicks_to_frags(molecules *map, int readLimit, int ltrim, int rtrim, uint32_t min) {
   u32Vec *frags = (u32Vec*)malloc(sizeof(u32Vec) * kv_size(map->fragments));
   int i;
   uint32_t f = 0;
@@ -207,13 +206,15 @@ int main(int argc, char *argv[]) {
       command = argv[index];
     }
   }
-  printf("command: %s\n", command);
 
-  rmap map;
+  cmap c;
   size_t n_frags;
 
+  int i = 0;
+  int ret = 1;
+
   if(strcmp(command, "dig") == 0) {
-    printf("-- in silico digest --\n");
+    fprintf(stderr, "-- Running in silico digest --\n");
     if(fasta_file == NULL) {
       fprintf(stderr, "FASTA file required (-f)\n");
       return 1;
@@ -225,64 +226,45 @@ int main(int argc, char *argv[]) {
     // make a list of restriction seqs - that's what digest wants
     char** rseqs = malloc(1 * sizeof(char*));
     rseqs[0] = restriction_seq;
-    cmap c = digest_fasta(fasta_file, rseqs, 1);
-    write_cmap(&c, stdout);
+    c = digest_fasta(fasta_file, rseqs, 1);
+    ret = write_cmap(&c, stdout);
   }
-
-  if(strcmp(command, "sim") == 0) {
-    // test if files exist
-    FILE* fp;
-    fp = fopen(bnx_file, "r");
-
-    if(fp == NULL) {
-      fprintf(stderr, "File '%s' does not exist\n", bnx_file);
-      return 1;
-    }
-    fclose(fp);
-
-    printf("# Loading '%s' into rmap\n", bnx_file);
-    time_t t0 = time(NULL);
-    map = bn_load(bnx_file);
-
-    n_frags = kv_size(map.fragments);
-    time_t t1 = time(NULL);
-    printf("# Loaded in %d seconds\n", (t1-t0));
-  }
-
-  int i = 0;
-  int ret = 1;
 
   if(strcmp(command, "ovl") == 0) {
-    if(argc < 8) {
-      printf("Not enough arguments for 'ovl'.\n\n");
-      usage();
-      return -1;
-    }
+    printf("# Loading '%s'...\n", bnx_file);
+    time_t t0 = time(NULL);
+    c = read_bnx(bnx_file);
+
+    time_t t1 = time(NULL);
+    printf("# Loaded %d molecules in %d seconds\n", c->n_maps, (t1-t0));
 
     // convert map of nicks to a simple array of byte vectors representing subfragment lengths
     // discretize by 1kb if doing any hashing, do no dicretization if doing DTW
     // -1 can be changed to a positive to number to limit the total number of fragments that are considered
-    byteVec *frags = nicks_to_frags_bin(&map, 1000, -1, 1, 1, 1000);
+    //byteVec *frags = nicks_to_frags_bin(&map, 1000, -1, 1, 1, 1000);
 
-    int ret = ovl_rmap(frags, n_frags, q, h, seed, threshold, max_qgrams, -1);
+    //int ret = ovl_rmap(frags, n_frags, q, h, seed, threshold, max_qgrams, -1);
 
     // free
+    /*
     for(i = 0; i < n_frags; i++) {
       kv_destroy(frags[i]);
     }
     free(frags);
+    */
   }
 
   else if(strcmp(command, "aln") == 0) {
     if(argc < 4) {
       printf("Not enough arguments for 'aln'.\n\n");
       usage();
-      return -1;
+      return 1;
     }
 
     // convert map of nicks to a simple array of byte vectors representing subfragment lengths
     // discretize by 1kb if doing any hashing, do no dicretization if doing DTW
     // -1 can be changed to a positive to number to limit the total number of fragments that are considered
+    /*
     u32Vec *frags = nicks_to_frags(&map, -1, 1, 1, 1000);
 
     int ret = dtw_rmap(frags, n_frags, threshold);
@@ -292,18 +274,20 @@ int main(int argc, char *argv[]) {
       kv_destroy(frags[i]);
     }
     free(frags);
+    */
   }
 
   else if(strcmp(command, "hsh") == 0) {
     if(argc < 6) {
       printf("Not enough arguments for 'aln'.\n\n");
       usage();
-      return -1;
+      return 1;
     }
 
     // convert map of nicks to a simple array of byte vectors representing subfragment lengths
     // discretize by 1kb if doing any hashing, do no dicretization if doing DTW
     // -1 can be changed to a positive to number to limit the total number of fragments that are considered
+    /*
     byteVec *frags = nicks_to_frags_bin(&map, 1000, -1, 1, 1, 1000);
 
     int ret = hash_rmap(frags, n_frags, q, threshold, max_qgrams, -1);
@@ -313,13 +297,14 @@ int main(int argc, char *argv[]) {
       kv_destroy(frags[i]);
     }
     free(frags);
+    */
   }
 
   else if(strcmp(command, "sim") == 0) {
     if(argc < 11) {
       printf("Not enough arguments for 'sim'.\n\n");
       usage();
-      return -1;
+      return 1;
     }
     char *ref_fasta = argv[3];
     float frag_prob = atof(argv[4]);
@@ -333,8 +318,6 @@ int main(int argc, char *argv[]) {
     simulate_bnx(ref_fasta, frag_prob, nick_prob, shear_prob, stretch_mean, stretch_std, resolution, coverage);
   }
 
-  if(strcmp(command, "sim") != 0) {
-    rmap_free(&map);
-  }
+  // free everything
   return ret;
 }

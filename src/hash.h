@@ -27,7 +27,6 @@
 
 #include "klib/kvec.h" // C dynamic vector
 #include "klib/khash.h" // C hash table/dictionary
-#include "rmap.h"
 
 // MAXIMUM # READS = 2^31 (~2bn)
 typedef struct {

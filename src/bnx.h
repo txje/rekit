@@ -25,16 +25,9 @@
 #ifndef __BNX_H__
 #define __BNX_H__
 
-#include "rmap.h"
-#include "io_utils.h"
-
-int bn_read_header(struct file *fp, rmap *map);
-int bn_read(struct file *fp, fragment *f);
-static int bn_read_bnx(struct file *fp, fragment *f);
-
-rmap bn_load(const char *filename);
-static int bn_read_cmap(struct file *fp, fragment *f);
-static int bn_read_cmap_header(struct file *fp, rmap *map);
-int bn_skip_comment_lines(struct file *fp);
+cmap read_bnx(const char *filename);
+int write_cmap(cmap *c, FILE* fp);
+int read_bnx_molecule(FILE *fp, cmap *c);
+int read_bnx_header(FILE *fp, cmap *c);
 
 #endif /* __BNX_H__ */

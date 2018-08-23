@@ -34,6 +34,10 @@ typedef struct cmap {
   size_t n_rec_seqs;
 } cmap;
 
+char* get_val(char* buf);
+void next_line(FILE *fp, char *buf, size_t bufsize);
+int string_begins_with(char* s, char* pre);
+
 int write_cmap(cmap *c, FILE* fp);
 cmap read_cmap(const char* fn);
 int add_map(cmap* c, uint32_t* positions, size_t n_pos, uint8_t channel);
