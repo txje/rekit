@@ -2,6 +2,8 @@
 #define _cmap_h_
 
 #include <stdint.h>
+#include "klib/kvec.h"
+#include "klib/kstring.h"
 
 /*
 
@@ -34,6 +36,15 @@ typedef struct cmap {
   size_t n_rec_seqs;
 } cmap;
 
+// various vectors to handle fragment/label data
+typedef kvec_t(uint8_t) byteVec;
+
+typedef kvec_t(uint32_t) u32Vec;
+typedef kvec_t(u32Vec*) fragVec;
+
+typedef kvec_t(kstring_t*) seqVec;
+
+// cmap and associated IO functions
 char* get_val(char* buf);
 void next_line(FILE *fp, char *buf, size_t bufsize);
 int string_begins_with(char* s, char* pre);

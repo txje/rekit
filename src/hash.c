@@ -31,7 +31,6 @@
 #include "klib/kvec.h" // C dynamic vector
 #include "klib/khash.h" // C hash table/dictionary
 #include "bnx.h"
-#include "rmap.h"
 #include "hash.h"
 
 

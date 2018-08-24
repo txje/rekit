@@ -29,7 +29,6 @@
 #include <string.h>
 #include <zlib.h>
 #include "klib/kvec.h"
-#include "rmap.h"
 #include "digest.h"
 
 #ifndef _kseq_

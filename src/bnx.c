@@ -128,8 +128,8 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
       return 1;
     }
     c->labels[mapid][i].position = (uint32_t)f;
-    c->labels[mapid][site_id].channel = (uint8_t)channel;
-    c->labels[mapid][site_id].occurrence = 0; // this is not used for molecule data, so it will always be 0
+    c->labels[mapid][i].channel = (uint8_t)channel;
+    c->labels[mapid][i].occurrence = 0; // this is not used for molecule data, so it will always be 0
   }
   assert(fgetc(fp) == '\n');
 
@@ -139,7 +139,6 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
     return 1;
   }
   assert(strcmp(token, "QX11") == 0);
-  float f;
   for(i = 0; i < c->map_lengths[mapid]; i++) {
     if(sscanf(buf, "%f", &f) != 1) {
       fprintf(stderr, "Bad BNX format\n");
@@ -155,7 +154,6 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
     return 1;
   }
   assert(strcmp(token, "QX12") == 0);
-  float f;
   for(i = 0; i < c->map_lengths[mapid]; i++) {
     if(sscanf(buf, "%f", &f) != 1) {
       fprintf(stderr, "Bad BNX format\n");
@@ -173,7 +171,7 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
 	return 0;
 }
 
-int write_cmap(cmap *c, FILE* fp) {
+int write_bnx(cmap *c, FILE* fp) {
   //FILE* fp = fopen(fn, "w");
   if(!fp) {
     fprintf(stderr, "Failed to write cmap (invalid file pointer)\n");

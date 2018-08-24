@@ -22,6 +22,8 @@
  * SOFTWARE.
  */
 
+#include "cmap.h"
+
 #ifndef __BNX_H__
 #define __BNX_H__
 

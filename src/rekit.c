@@ -23,6 +23,7 @@
  */
 
 #include <stdio.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
@@ -34,7 +35,7 @@
 //#include "hash.h"
 //#include "lsh.h"
 //#include "dtw.h"
-//#include "sim.h"
+#include "sim.h"
 #include "digest.h"
 
 void usage() {
@@ -71,69 +72,6 @@ void usage() {
   printf("    resolution: Minimum detectable fragment size\n");
   printf("    coverage: Target genome coverage\n");
 }
-
-/*
- * Takes a set of molecules (from one BNX file)
- * and returns an array of byteVecs, one for each fragment
- * where the values are discretized, potentially trimmed, sub-fragment sizes (between nick sites)
- */
-byteVec* nicks_to_frags_bin(molecules *map, uint32_t denom, int readLimit, int ltrim, int rtrim, uint32_t min) {
-  byteVec *frags = (byteVec*)malloc(sizeof(byteVec) * kv_size(map->fragments));
-  int i;
-  uint32_t f = 0;
-  while (f < kv_size(map->fragments)) {
-
-    nickVec nicks = kv_A(map->fragments, f).nicks;
-    int slen = kv_size(nicks);
-
-    // build ordered kvec of fragment sizes instead of nick positions
-    // and bin their values into nbins
-    kv_init(frags[f]);
-    for(i = ltrim; i < slen-rtrim; i++) {
-      uint32_t frg_size = (kv_A(nicks, i).pos - (i>0 ? kv_A(nicks, i-1).pos : 0));
-      uint8_t bin = (frg_size / denom > 255) ? 255 : (frg_size / denom);
-      if(bin >= min/denom) {
-        kv_push(uint8_t, frags[f], bin);
-      }
-    }
-
-    f++;
-
-    if(readLimit > 0 && f >= readLimit) {
-      break;
-    }
-  }
-  return frags;
-}
-
-u32Vec* nicks_to_frags(molecules *map, int readLimit, int ltrim, int rtrim, uint32_t min) {
-  u32Vec *frags = (u32Vec*)malloc(sizeof(u32Vec) * kv_size(map->fragments));
-  int i;
-  uint32_t f = 0;
-  while (f < kv_size(map->fragments)) {
-
-    nickVec nicks = kv_A(map->fragments, f).nicks;
-    int slen = kv_size(nicks);
-
-    // build ordered kvec of fragment sizes instead of nick positions
-    // and bin their values into nbins
-    kv_init(frags[f]);
-    for(i = ltrim; i < slen-rtrim; i++) {
-      uint32_t frg_size = (kv_A(nicks, i).pos - (i>0 ? kv_A(nicks, i-1).pos : 0));
-      if(frg_size >= min) {
-        kv_push(uint32_t, frags[f], frg_size);
-      }
-    }
-
-    f++;
-
-    if(readLimit > 0 && f >= readLimit) {
-      break;
-    }
-  }
-  return frags;
-}
-
 
 int main(int argc, char *argv[]) {
 
@@ -236,7 +174,7 @@ int main(int argc, char *argv[]) {
     c = read_bnx(bnx_file);
 
     time_t t1 = time(NULL);
-    printf("# Loaded %d molecules in %d seconds\n", c->n_maps, (t1-t0));
+    printf("# Loaded %d molecules in %d seconds\n", c.n_maps, (t1-t0));
 
     // convert map of nicks to a simple array of byte vectors representing subfragment lengths
     // discretize by 1kb if doing any hashing, do no dicretization if doing DTW

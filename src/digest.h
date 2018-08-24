@@ -24,7 +24,5 @@
 #include "klib/kvec.h"
 #include "cmap.h"
 
-typedef kvec_t(uint32_t) u32Vec;
-
 cmap digest_fasta(char* fasta_file, char** motifs, size_t n_motifs);
 int digest(char *seq, size_t seq_len, char **motifs, size_t n_motifs, float digest_rate, float shear_rate, int nlimit, u32Vec *sizes);
