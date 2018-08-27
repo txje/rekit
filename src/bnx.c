@@ -86,7 +86,8 @@ int read_bnx_header(FILE *fp, cmap *c) {
 
 int read_bnx_molecule(FILE *fp, cmap *c) {
   char** parts;
-	char buf[1024];
+	char buf[16384];
+	char token_buf[256];
   int i;
   const char* delim = "\t";
   
@@ -96,7 +97,7 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
   }
 
   char* ln = strndup(buf, sizeof(buf));
-  parts = malloc(sizeof(char*) * 21); // always exactly 21 fields in a 0 header line (for version 1.3)
+  parts = malloc(sizeof(char*) * 20); // always exactly 20 fields in a 0 header line (for version 1.3)
   i = 0;
   char* token;
   token = strtok(ln, delim);
@@ -105,7 +106,7 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
     token = strtok(NULL, delim);
   }
   int nfields = i;
-  assert(nfields == 21);
+  assert(nfields == 20);
 
   assert(strcmp(parts[0], "0") == 0);
   int mapid = atoi(parts[1]) - 1;
@@ -116,52 +117,52 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
   c->labels[mapid] = malloc(c->map_lengths[mapid] * sizeof(label));
   
   // ------ line 1 ------
-  if(sscanf(buf, "%s", token) != 1) {
-    fprintf(stderr, "Bad BNX format\n");
+  if(fgets(buf, sizeof(buf), fp) == NULL) {
     return 1;
   }
+  token = strtok(buf, delim); // labelchannel
   int channel = atoi(token);
-  float f;
-  for(i = 0; i < c->map_lengths[mapid]; i++) {
-    if(sscanf(buf, "%f", &f) != 1) {
-      fprintf(stderr, "Bad BNX format\n");
-      return 1;
-    }
-    c->labels[mapid][i].position = (uint32_t)f;
+  token = strtok(buf, delim); // first label pos
+  i = 0;
+  while(token != NULL) {
+    assert(i < c->map_lengths[mapid]);
+    c->labels[mapid][i].position = (uint32_t)atof(token);
     c->labels[mapid][i].channel = (uint8_t)channel;
     c->labels[mapid][i].occurrence = 0; // this is not used for molecule data, so it will always be 0
+    token = strtok(NULL, delim);
+    i++;
   }
-  assert(fgetc(fp) == '\n');
+  // sscanf implicitly skips the newline
 
   // ------ line 2 ------
-  if(sscanf(buf, "%s", token) != 1) {
-    fprintf(stderr, "Bad BNX format\n");
+  if(fgets(buf, sizeof(buf), fp) == NULL) {
     return 1;
   }
+  token = strtok(buf, delim); // labelchannel
   assert(strcmp(token, "QX11") == 0);
-  for(i = 0; i < c->map_lengths[mapid]; i++) {
-    if(sscanf(buf, "%f", &f) != 1) {
-      fprintf(stderr, "Bad BNX format\n");
-      return 1;
-    }
-    c->labels[mapid][i].stdev = (uint32_t)f; // THIS IS SNR, NOT stdev
+  token = strtok(buf, delim); // first label pos
+  i = 0;
+  while(token != NULL) {
+    assert(i < c->map_lengths[mapid]);
+    c->labels[mapid][i].stdev = (uint32_t)atof(token); // THIS IS SNR, NOT stdev
+    token = strtok(NULL, delim);
+    i++;
   }
-  assert(fgetc(fp) == '\n');
 
   // ------ line 3 ------
-  if(sscanf(buf, "%s", token) != 1) {
-    fprintf(stderr, "Bad BNX format\n");
+  if(fgets(buf, sizeof(buf), fp) == NULL) {
     return 1;
   }
+  token = strtok(buf, delim); // labelchannel
   assert(strcmp(token, "QX12") == 0);
-  for(i = 0; i < c->map_lengths[mapid]; i++) {
-    if(sscanf(buf, "%f", &f) != 1) {
-      fprintf(stderr, "Bad BNX format\n");
-      return 1;
-    }
-    c->labels[mapid][i].coverage = (uint32_t)f; // THIS IS Intensity, NOT coverage
+  token = strtok(buf, delim); // first label pos
+  i = 0;
+  while(token != NULL) {
+    assert(i < c->map_lengths[mapid]);
+    c->labels[mapid][i].coverage = (uint32_t)atof(token); // THIS IS Intensity, NOT coverage
+    token = strtok(NULL, delim);
+    i++;
   }
-  assert(fgetc(fp) == '\n');
 
   free(ln);
   free(parts);
