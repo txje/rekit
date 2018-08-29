@@ -46,6 +46,7 @@
 #include <time.h>
 #include <zlib.h>
 #include "klib/kvec.h"
+#include "klib/ksort.h"
 #include "klib/kstring.h"
 #include "digest.h"
 #include "sim.h"
@@ -60,6 +61,8 @@ KSEQ_INIT(gzFile, gzread)
 
 #endif
 
+KSORT_INIT_GENERIC(uint32_t)
+
 
 void fragment_seq(kstring_t* seq, seqVec* frag_seqs, float frag_prob) {
   int st = 0, i;
@@ -69,6 +72,7 @@ void fragment_seq(kstring_t* seq, seqVec* frag_seqs, float frag_prob) {
       kstring_t* frag_seq = malloc(sizeof(kstring_t));
       frag_seq->l = frag_seq->m = i-st;
       frag_seq->s = seq->s+st;
+      //printf("added sequence of length %d\n", frag_seq->l);
       kv_push(kstring_t*, *frag_seqs, frag_seq);
       st = i;
     }
@@ -104,48 +108,68 @@ float normal(float sigma, float mu) {
 }
 
 
-void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float nick_prob, float shear_prob, float stretch_mean, float stretch_std, uint32_t resolution_min) {
-  int i, j;
+void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float fn_rate, float fp_rate, float stretch_mean, float stretch_std, uint32_t resolution_min) {
+  int i, j, k;
   int nlimit = 100; // break strings of Ns at least 100bp long
   for(i = 0; i < kv_size(seqs); i++) {
     kstring_t* seq = kv_A(seqs, i);
 
     // do digestion + shearing with some probability
-    u32Vec frg;
-    kv_init(frg);
-    int res = digest(seq->s, seq->l, motifs, n_motifs, nick_prob, shear_prob, nlimit, &frg);
+    u32Vec positions;
+    kv_init(positions);
+    int res = digest(seq->s, seq->l, motifs, n_motifs, 1, 0, nlimit, &positions);
+    //printf("molecule %d of %d (%d bp) has %d labels\n", i, kv_size(seqs), seq->l, kv_size(positions));
 
-    // now perform modifications for stretching and limited resolution
-    u32Vec* modfrg = (u32Vec*)malloc(sizeof(u32Vec));
-    kv_init(*modfrg);
-    for(j = 0; j < kv_size(frg); j++) {
+    int fp = round(kv_size(positions) * normal(fp_rate, 0.01));
+    u32Vec fp_pos;
+    kv_init(fp_pos);
+    for(j = 0; j < fp; j++) {
+      kv_push(uint32_t, fp_pos, (uint32_t)round((double)rand() / (double)RAND_MAX * kv_A(positions, kv_size(positions)-1)));
+    }
+    ks_mergesort(uint32_t, kv_size(fp_pos), fp_pos.a, 0); // sort
+    k = 0; // index into fp_pos
+
+    // now perform modifications for FN, FP, stretching, and limited resolution
+    u32Vec* modpos = (u32Vec*)malloc(sizeof(u32Vec));
+    kv_init(*modpos);
+    uint32_t last = 0;
+    uint32_t last_stretched = 0;
+    for(j = 0; j < kv_size(positions); j++) {
+      uint32_t val;
+      if(k < kv_size(fp_pos) && kv_A(fp_pos, k) < kv_A(positions, j)) {
+        val = kv_A(fp_pos, k);
+        k++;
+        j--;
+      } else {
+        val = kv_A(positions, j);
+      }
       // apply normally distributed size variation
-      uint32_t f = kv_A(frg, j) + normal(stretch_mean, stretch_std);
+      uint32_t f = last_stretched + (val - last) * normal(stretch_mean, stretch_std);
+      last = val;
+      last_stretched = f;
 
       // then include only fragments that exceed some minimum size (typically, ~1kb for Bionano)
-      if(f >= resolution_min) {
-        kv_push(uint32_t, *modfrg, f);
+      // and fall above FN rate
+      if(f >= resolution_min && ((double)rand() / (double)RAND_MAX) > fn_rate) {
+        kv_push(uint32_t, *modpos, f);
       }
     }
 
-    kv_push(u32Vec*, *frags, modfrg);
-    kv_destroy(frg);
+    kv_push(u32Vec*, *frags, modpos);
+    kv_destroy(positions);
   }
 }
 
 
-void simulate_bnx(char* ref_fasta, float frag_prob, float nick_prob, float shear_prob, float stretch_mean, float stretch_std, uint32_t resolution_min, float coverage) {
-  char **motifs = (char**)malloc(sizeof(char*));
-  motifs[0] = "ACGTGCA";
-  size_t n_motifs = 1;
+cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_prob, float fn, float fp, float stretch_mean, float stretch_std, uint32_t resolution_min, float coverage) {
 
   float bimera_prob = 0.01;
-  float trimera_prob = 0.001;
-  float quadramera_prob = 0.0001;
+  float trimera_prob = 0.0001;
+  float quadramera_prob = 0.000001;
 
   srand(time(NULL));
 
-  gzFile fp;
+  gzFile f;
   kseq_t* seq;
   uint32_t i;
   int j;
@@ -158,35 +182,34 @@ void simulate_bnx(char* ref_fasta, float frag_prob, float nick_prob, float shear
   seqVec frag_seqs;
   kv_init(frag_seqs);
 
-  fp = gzopen(ref_fasta, "r");
-  seq = kseq_init(fp);
-  printf("Fasta file: %s\n", ref_fasta);
-  printf("Fragmenting and digesting up to %fx coverage\n", coverage*10);
+  f = gzopen(ref_fasta, "r");
+  seq = kseq_init(f);
+  fprintf(stderr, "Fasta file: %s\n", ref_fasta);
+  fprintf(stderr, "Fragmenting and digesting up to %fx coverage\n", coverage*10);
 
   int l;
   while ((l = kseq_read(seq)) >= 0) {
     // name: seq->name.s, seq: seq->seq.s, length: l
-    printf("Reading sequence '%s' (%i bp).\n", seq->name.s, l);
-    fflush(stdout);
+    //fprintf(stderr, "Reading sequence '%s' (%i bp).\n", seq->name.s, l);
     genome_size = genome_size + seq->seq.l;
 
     // digest 10x as many genomes as the coverage we want, then we'll sample down
     int c;
-    for(c = 0; c < coverage*10; c++) {
+    //for(c = 0; c < coverage*10; c++) {
+    for(c = 0; c < 1; c++) {
       frag_seqs.n = 0; // reset the intermediate fragment sequences each round
       fragment_seq(&seq->seq, &frag_seqs, frag_prob);
-      bn_map(frag_seqs, &fragments, motifs, n_motifs, nick_prob, shear_prob, stretch_mean, stretch_std, resolution_min);
+      bn_map(frag_seqs, &fragments, motifs, n_motifs, fn, fp, stretch_mean, stretch_std, resolution_min);
     }
   }
   kseq_destroy(seq);
-  gzclose(fp);
-  printf("Produced %d read fragments.\n", kv_size(fragments));
-  fflush(stdout);
+  kv_destroy(frag_seqs);
+  gzclose(f);
+  //fprintf(stderr, "Produced %d read fragments.\n", kv_size(fragments));
   
   // sample randomly down to the requested coverage, include chimeras
   // bimera_prob, trimera_prob, quadramera_prob
-  printf("Sampling and chimerizing down to %fx coverage\n", coverage);
-  fflush(stdout);
+  //fprintf(stderr, "Sampling and chimerizing down to %fx coverage\n", coverage);
   fragVec observed;
   kv_init(observed);
   size_t f0, f1;
@@ -197,20 +220,13 @@ void simulate_bnx(char* ref_fasta, float frag_prob, float nick_prob, float shear
     // sample without replacement
     do {
       f0 = (size_t)(rand() * (1.0 / RAND_MAX) * kv_size(fragments));
-      printf("f: %d\n", f0);
     } while(kv_A(fragments, f0) == NULL); // this will never slow down too much since we created 10x as many as we'll ever sample
-    printf("picked read fragment %d\n", f0);
-    fflush(stdout);
 
     // append as many other fragments as the chimerism calls for
     while(chimera > 1) {
-      printf("chimera: %d\n", chimera);
-      fflush(stdout);
       do {
         f1 = rand() * (1.0 / RAND_MAX) * kv_size(fragments);
       } while(kv_A(fragments, f1) == NULL); // this will never slow down too much since we created 10x as many as we'll ever sample
-      printf("added read fragment %d to chimera\n", f1);
-      fflush(stdout);
 
       kv_extend(uint32_t, *kv_A(fragments, f0), *kv_A(fragments, f1));
       kv_destroy(*kv_A(fragments, f1));
@@ -224,9 +240,15 @@ void simulate_bnx(char* ref_fasta, float frag_prob, float nick_prob, float shear
     for(j = 0; j < kv_size(*kv_A(fragments, f0)); j++) {
       i = i + kv_A(*kv_A(fragments, f0), j);
     }
-    printf("total coverage: %d\n", i);
-    fflush(stdout);
+    //fprintf(stderr, "total coverage: %d\n", i);
 
     kv_A(fragments, f0) = NULL; // but we can clear the pointer so that it's not sampled again
   }
+  kv_destroy(fragments);
+  cmap c;
+  init_cmap(&c);
+  for(i = 0; i < kv_size(observed); i++) {
+    add_map(&c, kv_A(observed, i)->a, kv_size(*kv_A(observed, i)), 1);
+  }
+  return c;
 }

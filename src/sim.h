@@ -29,4 +29,4 @@
     (v0).m = (v0).n; \
 	} while (0)
 
-void simulate_bnx(char* ref_fasta, float frag_prob, float nick_prob, float shear_prob, float stretch_mean, float stretch_std, uint32_t resolution_min, float coverage);
+cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_prob, float nick_prob, float shear_prob, float stretch_mean, float stretch_std, uint32_t resolution_min, float coverage);

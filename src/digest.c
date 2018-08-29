@@ -41,7 +41,7 @@ KSEQ_INIT(gzFile, gzread)
 
 #endif
 
-int digest(char *seq, size_t seq_len, char **motifs, size_t n_motifs, float digest_rate, float shear_rate, int nlimit, u32Vec *sizes) {
+int digest(char *seq, size_t seq_len, char **motifs, size_t n_motifs, float digest_rate, float shear_rate, int nlimit, u32Vec *positions) {
   srand(time(NULL));
 
   // go through sequence
@@ -103,17 +103,24 @@ int digest(char *seq, size_t seq_len, char **motifs, size_t n_motifs, float dige
       }
       //printf("Comparing %s and %s (rc) to motif %s (%dbp)\n", mers[0][m], mers[1][m], motifs[m], mlen);
 
+      /*
       float digest_chance = (double)rand() / (double)RAND_MAX;
       float shear_chance = (double)rand() / (double)RAND_MAX;
       //printf("Random number %f < rate %f?\n", rnd, digest_rate);
       if(shear_chance < shear_rate || ((strcmp(motifs[m], mers[0][m]) == 0 || strcmp(motifs[m], mers[1][m]) == 0) && digest_chance <= digest_rate)) {
-        kv_push(uint32_t, *sizes, (uint32_t)i);
+        kv_push(uint32_t, *positions, (uint32_t)i);
         break; // stop checking motifs
+      }
+      */
+      // do a perfect digestion - ignores FP and FN
+      if (strcmp(motifs[m], mers[0][m]) == 0 || strcmp(motifs[m], mers[1][m]) == 0) {
+        kv_push(uint32_t, *positions, (uint32_t)i);
+        break;
       }
     }
   }
 
-  kv_push(uint32_t, *sizes, (uint32_t)i);
+  kv_push(uint32_t, *positions, (uint32_t)i);
 
   return 0;
 }
