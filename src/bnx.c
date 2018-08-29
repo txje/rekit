@@ -181,20 +181,38 @@ int write_bnx(cmap *c, FILE* fp) {
 
   size_t i, j, k;
 
-  fprintf(fp, "# CMAP File Version:\t0.1\n");
+  fprintf(fp, "# BNX File Version:\t1.3\n");
   fprintf(fp, "# Label Channels:\t%d\n", c->n_rec_seqs);
   for(j = 0; j < c->n_rec_seqs; j++) {
     fprintf(fp, "# Nickase Recognition Site %u:\t%s\n", j+1, c->rec_seqs[j]);
   }
-  fprintf(fp, "# Number of Consensus Nanomaps:\t%u\n", c->n_maps);
-  fprintf(fp, "#h CMapId\tContigLength\tNumSites\tSiteID\tLabelChannel\tPosition\tStdDev\tCoverage\tOccurrence\n");
-  fprintf(fp, "#f int\tfloat\tint\tint\tint\tfloat\tfloat\tint\tint\n");
+  fprintf(fp, "# Bases per Pixel:\t%u\n", 500);
+  fprintf(fp, "# Number of Molecules:\t%u\n", c->n_maps);
+  fprintf(fp, "# Min Label SNR:\t%.2f\n", 0);
+  fprintf(fp, "#0h LabelChannel  MoleculeID  Length  AvgIntensity  SNR NumberofLabels  OriginalMoleculeId  ScanNumber  ScanDirection ChipId  Flowcell  RunId Column  StartFOV  StartX  StartY  EndFOV  EndX  EndY  GlobalScanNumber\n");
+  fprintf(fp, "#0f int  int   float  float float int int int int string  int int int int int int int int int int\n");
+  fprintf(fp, "#1h LabelChannel  LabelPositions[N]\n");
+  fprintf(fp, "#1f int float\n");
+  fprintf(fp, "#Qh QualityScoreID  QualityScores[N]\n");
+  fprintf(fp, "#Qf string  float[N]\n");
+  fprintf(fp, "# Quality Score QX11: Label SNR for channel 1\n");
+  fprintf(fp, "# Quality Score QX12: Label Intensity for channel 1:\n");
 
   for(i = 0; i < c->n_maps; i++) {
+    fprintf(fp, "%d\t%d\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t%d\tsim\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", 0, i+1, (float)c->ref_lengths[i], 0, 0, c->map_lengths[i], i+1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    fprintf(fp, "1");
     for(k = 0; k < c->map_lengths[i]; k++) {
-      // very weird - if the parameters are not cast, they can be arbitrarily reordered in the output string (presumably to optimize type-matching)
-      fprintf(fp, "%u\t%.1f\t%u\t%u\t%u\t%.1f\t%.1f\t%u\t%u\n", i+1, (float)c->ref_lengths[i], c->map_lengths[i], k+1, c->labels[i][k].channel, (float)c->labels[i][k].position, (float)c->labels[i][k].stdev, c->labels[i][k].coverage, c->labels[i][k].occurrence);
+      fprintf(fp, "\t%.2f", (float)c->labels[i][k].position);
     }
+    fprintf(fp, "\nQX11");
+    for(k = 0; k < c->map_lengths[i]; k++) {
+      fprintf(fp, "\t%.2f", (float)c->labels[i][k].stdev);
+    }
+    fprintf(fp, "\nQX12");
+    for(k = 0; k < c->map_lengths[i]; k++) {
+      fprintf(fp, "\t%.2f", (float)c->labels[i][k].coverage);
+    }
+    fprintf(fp, "\n");
   }
 
   //fclose(fp);

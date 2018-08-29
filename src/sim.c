@@ -86,7 +86,7 @@ void fragment_seq(kstring_t* seq, seqVec* frag_seqs, float frag_prob) {
 
 
 // from https://en.wikipedia.org/wiki/Box-Muller_transform
-float normal(float sigma, float mu) {
+float normal(float mu, float sigma) {
   const float two_pi = 2.0 * 3.14159265358979323;
   static float z0, z1;
 
@@ -157,6 +157,12 @@ void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float f
 
     kv_push(u32Vec*, *frags, modpos);
     kv_destroy(positions);
+
+    /*
+    for(j = 0; j < kv_size(*modpos); j++)
+      printf("%d\t", kv_A(*modpos, j));
+    printf("\n");
+    */
   }
 }
 
@@ -171,10 +177,10 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
 
   gzFile f;
   kseq_t* seq;
-  uint32_t i;
+  uint64_t i;
   int j;
 
-  size_t genome_size = 0;
+  uint64_t genome_size = 0;
 
   // vector to hold optical fragments
   fragVec fragments;
@@ -194,9 +200,7 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
     genome_size = genome_size + seq->seq.l;
 
     // digest 10x as many genomes as the coverage we want, then we'll sample down
-    int c;
-    //for(c = 0; c < coverage*10; c++) {
-    for(c = 0; c < 1; c++) {
+    for(j = 0; j < coverage*10; j++) {
       frag_seqs.n = 0; // reset the intermediate fragment sequences each round
       fragment_seq(&seq->seq, &frag_seqs, frag_prob);
       bn_map(frag_seqs, &fragments, motifs, n_motifs, fn, fp, stretch_mean, stretch_std, resolution_min);
@@ -205,46 +209,67 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   kseq_destroy(seq);
   kv_destroy(frag_seqs);
   gzclose(f);
-  //fprintf(stderr, "Produced %d read fragments.\n", kv_size(fragments));
   
   // sample randomly down to the requested coverage, include chimeras
   // bimera_prob, trimera_prob, quadramera_prob
-  //fprintf(stderr, "Sampling and chimerizing down to %fx coverage\n", coverage);
   fragVec observed;
   kv_init(observed);
   size_t f0, f1;
-  for(i = 0; i < coverage*genome_size; ) {
-    float chimera_prob = rand() * (1.0 / RAND_MAX);
+  uint64_t target_coverage = (uint64_t)((double)coverage * genome_size);
+  //fprintf(stderr, "Sampling and chimerizing down to %fx coverage (~%u bp)\n", coverage, target_coverage);
+  for(i = 0; i < target_coverage; ) {
+    double chimera_prob = (double)rand() / (double)RAND_MAX;
     int chimera = (chimera_prob < quadramera_prob ? 4 : (chimera_prob < trimera_prob ? 3 : (chimera_prob < bimera_prob ? 2 : 1)));
 
     // sample without replacement
+    // this will never slow down too much since we created 10x as many as we'll ever sample
     do {
       f0 = (size_t)(rand() * (1.0 / RAND_MAX) * kv_size(fragments));
-    } while(kv_A(fragments, f0) == NULL); // this will never slow down too much since we created 10x as many as we'll ever sample
+    } while(kv_A(fragments, f0) == NULL || kv_size(*kv_A(fragments, f0)) <= 0); // keep trying if this fragment was already sampled or has no labels
 
     // append as many other fragments as the chimerism calls for
     while(chimera > 1) {
       do {
         f1 = rand() * (1.0 / RAND_MAX) * kv_size(fragments);
-      } while(kv_A(fragments, f1) == NULL); // this will never slow down too much since we created 10x as many as we'll ever sample
+      } while(f1 == f0 || kv_A(fragments, f1) == NULL); // this will never slow down too much since we created 10x as many as we'll ever sample
 
-      kv_extend(uint32_t, *kv_A(fragments, f0), *kv_A(fragments, f1));
+      // shift all of the f1 positions over to append to f0
+      uint32_t last = kv_A(*kv_A(fragments, f0), kv_size(*kv_A(fragments, f0))-1);
+      for(j = 0; j < kv_size(*kv_A(fragments, f1)); j++) {
+        //kv_A(*kv_A(fragments, f1), j) += last;
+        kv_push(uint32_t, *kv_A(fragments, f0), kv_A(*kv_A(fragments, f1), j) + last);
+      }
+
+      // concatenate f1 to f0 and delete f1
+      //kv_extend(uint32_t, *kv_A(fragments, f0), *kv_A(fragments, f1)); // TODO - this doesn't adjust positions for appended fragments
       kv_destroy(*kv_A(fragments, f1));
       kv_A(fragments, f1) = NULL;
       chimera--;
     }
 
+    /*
+    printf("%d\t", chimera);
+    for(j = 0; j < kv_size(*kv_A(fragments, f0)); j++)
+      printf("%d\t", kv_A(*kv_A(fragments, f0), j));
+    printf("\n");
+    */
+
     kv_push(u32Vec*, observed, kv_A(fragments, f0));
 
     // add to our running coverage
-    for(j = 0; j < kv_size(*kv_A(fragments, f0)); j++) {
-      i = i + kv_A(*kv_A(fragments, f0), j);
-    }
-    //fprintf(stderr, "total coverage: %d\n", i);
+    size_t f0_size = kv_size(*kv_A(fragments, f0));
+    uint32_t f0_0 = kv_A(*kv_A(fragments, f0), 0);
+    i += kv_A(*kv_A(fragments, f0), kv_size(*kv_A(fragments, f0))-1);
 
     kv_A(fragments, f0) = NULL; // but we can clear the pointer so that it's not sampled again
   }
+
+  // clean up unsampled fragments
+  for(i = 0; i < kv_size(fragments); i++)
+    if(kv_A(fragments, i) != NULL)
+      kv_destroy(*kv_A(fragments, i));
   kv_destroy(fragments);
+
   cmap c;
   init_cmap(&c);
   for(i = 0; i < kv_size(observed); i++) {

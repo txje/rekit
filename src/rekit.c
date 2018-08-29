@@ -37,24 +37,28 @@
 //#include "dtw.h"
 #include "sim.h"
 #include "digest.h"
+#include "bam.h"
 
 void usage() {
   printf("Usage: rekit [command] [options]\n");
   printf("Commands:\n");
-  printf("  ovl: compute MinHash/pairwise Jaccard similarity\n");
-  printf("  aln: compute dynamic time warping glocal (overlap) alignments\n");
-  printf("  hsh: compute full q-gram intersection using a hash table\n");
-  printf("  sim: simulate molecules\n");
-  printf("  dig: in silico digestion\n");
+  printf("  overlap:  compute MinHash/pairwise Jaccard similarity\n");
+  printf("  align:    compute dynamic time warping glocal (overlap) alignments\n");
+  printf("  hash:     compute full q-gram intersection using a hash table\n");
+  printf("  simulate: simulate molecules\n");
+  printf("  digest:   in silico digestion\n");
+  printf("  label:    produce alignment-based reference CMAP\n");
   printf("Options:\n");
-  printf("  ovl -b\n");
-  printf("  aln -b\n");
-  printf("  hsh -b\n");
-  printf("  sim -frx --break-rate --fn --fp --min-frag --stretch-mean --stretch-std\n");
-  printf("  dig -fr\n");
+  printf("  overlap  -b\n");
+  printf("  align    -b\n");
+  printf("  hash     -b\n");
+  printf("  simulate -frx --break-rate --fn --fp --min-frag --stretch-mean --stretch-std\n");
+  printf("  digest   -fr\n");
+  printf("  label    -a\n");
   printf("    -b: bnx: A single BNX file containing molecules\n");
   printf("    -c: cmap: A single CMAP file\n");
   printf("    -f: fasta: Reference sequence to simulate from\n");
+  printf("    -a: bam: BAM alignment file\n");
   printf("    -r: cutseq: Recognition/label site sequence\n");
   printf("    -q: Size of q-gram/k-mer to hash\n");
   printf("    -h: Number of hash functions to apply\n");
@@ -63,23 +67,26 @@ void usage() {
   printf("    -m: max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored\n");
   printf("    -d: threshold: Score threshold to report alignment\n");
   printf("    -x: Simulated molecule coverage\n");
-  printf("  sim options:\n");
+  printf("  simulate options:\n");
   printf("    --break-rate: Probability of genome fragmentation per locus (default: 0.000005)\n");
   printf("    --fn: Probability of missed label at true restriction site (default: 0.1)\n");
   printf("    --fp: Probability of false-positive label (default: 0.05)\n");
   printf("    --stretch-mean: Fragment stretch mean (default: 1.0)\n");
   printf("    --stretch-std: Fragment stretch standard deviation (default: 0.05)\n");
   printf("    --min-frag: Minimum detectable fragment size\n");
+  printf("  label options:\n");
+  printf("    --coverage-threshold: Read coverage required (in ~300bp window) to call a label site (default: 10)\n");
 }
 
 static struct option long_options[] = {
 // if these are the same as a single-character option, put that character in the 4th field instead of 0
-  { "break-rate",      required_argument, 0, 0 },
-  { "fn",              required_argument, 0, 0 },
-  { "fp",              required_argument, 0, 0 },
-  { "min-frag",        required_argument, 0, 0 },
-  { "stretch-mean",    required_argument, 0, 0 },
-  { "stretch-std",     required_argument, 0, 0 },
+  { "break-rate",             required_argument, 0, 0 },
+  { "fn",                     required_argument, 0, 0 },
+  { "fp",                     required_argument, 0, 0 },
+  { "min-frag",               required_argument, 0, 0 },
+  { "stretch-mean",           required_argument, 0, 0 },
+  { "stretch-std",            required_argument, 0, 0 },
+  { "coverage-threshold",     required_argument, 0, 0 },
   { 0, 0, 0, 0}
 };
 
@@ -88,6 +95,7 @@ int main(int argc, char *argv[]) {
   char* bnx_file = NULL; // .bnx file path/name
   char* fasta_file = NULL; // .fasta file path/name
   char* cmap_file = NULL; // .cmap file path/name (either reference or consensus)
+  char* bam_file = NULL; // .bam file path/name (aligned)
   char* restriction_seq = NULL; // restriction enzyme or label recognition sequence (must also be reverse complemented if not symmetrical)
   int q = 5; // q-gram size
   int h = 10; // number of hashes
@@ -97,6 +105,7 @@ int main(int argc, char *argv[]) {
   int max_qgrams = 1000; // made this up
 
   int coverage = 0;
+  int covg_threshold = 10;
   float break_rate = 0.000005; // one every 200Kb
   float fn = 0.1; // 10% false negative (missed) labels
   float fp = 0.05; // 5% false positive (extra) labels
@@ -106,7 +115,7 @@ int main(int argc, char *argv[]) {
 
   int opt, long_idx;
   opterr = 0;
-  while ((opt = getopt_long(argc, argv, "b:c:q:h:f:r:t:m:vx:", long_options, &long_idx)) != -1) {
+  while ((opt = getopt_long(argc, argv, "b:c:q:h:f:r:t:m:vx:a:", long_options, &long_idx)) != -1) {
     switch (opt) {
       case 'b':
         bnx_file = optarg;
@@ -135,8 +144,11 @@ int main(int argc, char *argv[]) {
       case 'x':
         coverage = atoi(optarg);
         break;
+      case 'a':
+        bam_file = optarg;
+        break;
       case '?':
-        if (optopt == 'b' || optopt == 'c' || optopt == 'q' || optopt == 'h' || optopt == 'r' || optopt == 'f' || optopt == 't' || optopt == 'm' || optopt == 'x')
+        if (optopt == 'b' || optopt == 'c' || optopt == 'q' || optopt == 'h' || optopt == 'r' || optopt == 'f' || optopt == 't' || optopt == 'm' || optopt == 'x' || optopt == 'a')
           fprintf(stderr, "Option -%c requires an argument.\n", optopt);
         else if (isprint (optopt))
           fprintf(stderr, "Unknown option `-%c'.\n", optopt);
@@ -150,6 +162,7 @@ int main(int argc, char *argv[]) {
         else if (long_idx == 3) min_frag = atoi(optarg); // --min-frag
         else if (long_idx == 4) stretch_mean = atof(optarg); // --stretch-mean
         else if (long_idx == 5) stretch_std = atof(optarg); // --stretch-std
+        else if (long_idx == 6) covg_threshold = atoi(optarg); // --coverage-threshold
       default:
         usage();
         return 1;
@@ -179,7 +192,7 @@ int main(int argc, char *argv[]) {
   int i = 0;
   int ret = 1;
 
-  if(strcmp(command, "dig") == 0) {
+  if(strcmp(command, "digest") == 0) {
     fprintf(stderr, "-- Running in silico digest --\n");
     if(fasta_file == NULL) {
       fprintf(stderr, "FASTA file required (-f)\n");
@@ -196,7 +209,17 @@ int main(int argc, char *argv[]) {
     ret = write_cmap(&c, stdout);
   }
 
-  if(strcmp(command, "ovl") == 0) {
+  if(strcmp(command, "label") == 0) {
+    fprintf(stderr, "-- Running alignment-based labeling -> CMAP --\n");
+    if(bam_file == NULL) {
+      fprintf(stderr, "BAM file required (-a)\n");
+      return 1;
+    }
+    c = get_cmap_from_bam(bam_file, covg_threshold);
+    ret = write_cmap(&c, stdout);
+  }
+
+  if(strcmp(command, "overlap") == 0) {
     printf("# Loading '%s'...\n", bnx_file);
     time_t t0 = time(NULL);
     c = read_bnx(bnx_file);
@@ -220,7 +243,7 @@ int main(int argc, char *argv[]) {
     */
   }
 
-  else if(strcmp(command, "aln") == 0) {
+  else if(strcmp(command, "align") == 0) {
     if(argc < 4) {
       printf("Not enough arguments for 'aln'.\n\n");
       usage();
@@ -243,7 +266,7 @@ int main(int argc, char *argv[]) {
     */
   }
 
-  else if(strcmp(command, "hsh") == 0) {
+  else if(strcmp(command, "hash") == 0) {
     if(argc < 6) {
       printf("Not enough arguments for 'aln'.\n\n");
       usage();
@@ -266,7 +289,7 @@ int main(int argc, char *argv[]) {
     */
   }
 
-  else if(strcmp(command, "sim") == 0) {
+  else if(strcmp(command, "simulate") == 0) {
     if(fasta_file == NULL) {
       fprintf(stderr, "FASTA file required (-f)\n");
       return 1;
@@ -283,9 +306,9 @@ int main(int argc, char *argv[]) {
     char** rseqs = malloc(1 * sizeof(char*));
     rseqs[0] = restriction_seq;
 
-    fprintf(stderr, "-- Running optical mapping simulation --n");
+    fprintf(stderr, "-- Running optical mapping simulation --\n");
     c = simulate_bnx(fasta_file, rseqs, 1, break_rate, fn, fp, stretch_mean, stretch_std, min_frag, coverage);
-    ret = write_cmap(&c, stdout);
+    ret = write_bnx(&c, stdout);
   }
 
   // free everything

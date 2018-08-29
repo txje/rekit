@@ -28,7 +28,7 @@
 #define __BNX_H__
 
 cmap read_bnx(const char *filename);
-int write_cmap(cmap *c, FILE* fp);
+int write_bnx(cmap *c, FILE* fp);
 int read_bnx_molecule(FILE *fp, cmap *c);
 int read_bnx_header(FILE *fp, cmap *c);
 

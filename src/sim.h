@@ -24,9 +24,8 @@
 
 #define kv_extend(type, v0, v1) do { \
 		if ((v0).m < (v0).n + (v1).n) kv_resize(type, v0, (v0).n + (v1).n); \
-		memcpy((v1).a, (v0).a+(v0).n, sizeof(type) * (v1).n); \
+		memcpy((v0).a+(v0).n, (v1).a, sizeof(type) * (v1).n); \
 		(v0).n = (v0).n + (v1).n; \
-    (v0).m = (v0).n; \
 	} while (0)
 
 cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_prob, float nick_prob, float shear_prob, float stretch_mean, float stretch_std, uint32_t resolution_min, float coverage);
