@@ -73,7 +73,7 @@ void usage() {
   printf("    --fp: Probability of false-positive label (default: 0.05)\n");
   printf("    --stretch-mean: Fragment stretch mean (default: 1.0)\n");
   printf("    --stretch-std: Fragment stretch standard deviation (default: 0.05)\n");
-  printf("    --min-frag: Minimum detectable fragment size\n");
+  printf("    --min-frag: Minimum detectable fragment size (default: 500)\n");
   printf("  label options:\n");
   printf("    --coverage-threshold: Read coverage required (in ~300bp window) to call a label site (default: 10)\n");
 }
@@ -87,6 +87,7 @@ static struct option long_options[] = {
   { "stretch-mean",           required_argument, 0, 0 },
   { "stretch-std",            required_argument, 0, 0 },
   { "coverage-threshold",     required_argument, 0, 0 },
+  { "help",                   no_argument,       0, 0 },
   { 0, 0, 0, 0}
 };
 
@@ -115,7 +116,7 @@ int main(int argc, char *argv[]) {
 
   int opt, long_idx;
   opterr = 0;
-  while ((opt = getopt_long(argc, argv, "b:c:q:h:f:r:t:m:vx:a:", long_options, &long_idx)) != -1) {
+  while ((opt = getopt_long(argc, argv, "b:c:q:hf:r:t:m:vx:a:", long_options, &long_idx)) != -1) {
     switch (opt) {
       case 'b':
         bnx_file = optarg;
@@ -127,7 +128,8 @@ int main(int argc, char *argv[]) {
         q = atoi(optarg);
         break;
       case 'h':
-        h = atoi(optarg);
+        usage();
+        return 0;
         break;
       case 'f':
         fasta_file = optarg;
@@ -148,7 +150,7 @@ int main(int argc, char *argv[]) {
         bam_file = optarg;
         break;
       case '?':
-        if (optopt == 'b' || optopt == 'c' || optopt == 'q' || optopt == 'h' || optopt == 'r' || optopt == 'f' || optopt == 't' || optopt == 'm' || optopt == 'x' || optopt == 'a')
+        if (optopt == 'b' || optopt == 'c' || optopt == 'q' || optopt == 'r' || optopt == 'f' || optopt == 't' || optopt == 'm' || optopt == 'x' || optopt == 'a')
           fprintf(stderr, "Option -%c requires an argument.\n", optopt);
         else if (isprint (optopt))
           fprintf(stderr, "Unknown option `-%c'.\n", optopt);
@@ -163,6 +165,7 @@ int main(int argc, char *argv[]) {
         else if (long_idx == 4) stretch_mean = atof(optarg); // --stretch-mean
         else if (long_idx == 5) stretch_std = atof(optarg); // --stretch-std
         else if (long_idx == 6) covg_threshold = atoi(optarg); // --coverage-threshold
+        else if (long_idx == 7) {usage(); return 0;} // --help
       default:
         usage();
         return 1;
