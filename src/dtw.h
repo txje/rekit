@@ -26,7 +26,6 @@
 #define __DTW_H__
 
 #include "klib/kvec.h" // C dynamic vector
-#include "rmap.h"
 
 typedef kvec_t(uint8_t) pathvec;
 

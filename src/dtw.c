@@ -44,7 +44,6 @@ v |
 #include <time.h>
 #include "klib/kvec.h" // C dynamic vector
 #include "dtw.h"
-#include "rmap.h"
 
 /*
  * Overlap dynamic programming (time warping) alignment
