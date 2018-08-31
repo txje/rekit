@@ -24,6 +24,7 @@
 
 #include <stdio.h>
 #include <ctype.h>
+#include <float.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
@@ -105,7 +106,7 @@ int main(int argc, char *argv[]) {
   int seed = 0; // made this up
   int max_qgrams = 1000; // made this up
 
-  int coverage = 0;
+  float coverage = 0.0;
   int covg_threshold = 10;
   float break_rate = 0.000005; // one every 200Kb
   float fn = 0.1; // 10% false negative (missed) labels
@@ -144,7 +145,7 @@ int main(int argc, char *argv[]) {
         verbose = 1;
         break;
       case 'x':
-        coverage = atoi(optarg);
+        coverage = atof(optarg);
         break;
       case 'a':
         bam_file = optarg;
@@ -301,7 +302,7 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Restriction sequence is required (-r)\n");
       return 1;
     }
-    if(coverage == 0) {
+    if(coverage < FLT_EPSILON) {
       fprintf(stderr, "Coverage is required (-x)\n");
       return 1;
     }

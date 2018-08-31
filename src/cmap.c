@@ -165,7 +165,7 @@ int write_cmap(cmap *c, FILE* fp) {
   for(i = 0; i < c->n_maps; i++) {
     for(k = 0; k < c->map_lengths[i]; k++) {
       // very weird - if the parameters are not cast, they can be arbitrarily reordered in the output string (presumably to optimize type-matching)
-      fprintf(fp, "%u\t%.1f\t%u\t%u\t%u\t%.1f\t%.1f\t%u\t%u\n", i+1, (float)c->ref_lengths[i], c->map_lengths[i], k+1, c->labels[i][k].channel, (float)c->labels[i][k].position, (float)c->labels[i][k].stdev, c->labels[i][k].coverage, c->labels[i][k].occurrence);
+      fprintf(fp, "%u\t%.1f\t%u\t%u\t%u\t%.1f\t%.1f\t%u\t%u\n", i+1, (float)c->ref_lengths[i], c->map_lengths[i]-1, k+1, c->labels[i][k].channel, (float)c->labels[i][k].position, (float)c->labels[i][k].stdev, c->labels[i][k].coverage, c->labels[i][k].occurrence);
     }
   }
 
@@ -219,7 +219,7 @@ int add_map(cmap* c, uint32_t* positions, size_t n_pos, uint8_t channel) {
     return 1;
   };
   c->ref_lengths[mapid] = positions[n_pos - 1];
-  c->map_lengths[mapid] = n_pos - 1;
+  c->map_lengths[mapid] = n_pos;
   c->labels[mapid] = malloc(n_pos * sizeof(label));
   int i;
   for(i = 0; i < n_pos; i++) {

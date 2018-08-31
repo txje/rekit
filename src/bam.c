@@ -7,12 +7,8 @@
 #include "cmap.h"
 
 /*
- * bamstat.c
- *
  * Jeremy Wang
  * 20180817
- *
- * Just compute binned coverage
 */
 
 cmap get_cmap_from_bam(char* bam_file, int covg_threshold) {
@@ -26,7 +22,6 @@ cmap get_cmap_from_bam(char* bam_file, int covg_threshold) {
   bam_hdr_t *header;
   bam1_t *aln;
   int ret_val;
-  //fprintf(stderr, "Reading BAM file '%s'...\n", bam_file);
 
   if(strcmp(bam_file,  "-") == 0) {
     bam = sam_open("-", "r");
@@ -78,19 +73,17 @@ cmap get_cmap_from_bam(char* bam_file, int covg_threshold) {
     }
 
     ct++;
-    /*
     if(ct % 1000000 == 0) {
-      printf("%d reads processed\n", ct);
+      //fprintf(stderr, "%d reads processed\n", ct);
     }
-    */
   }
 
   uint64_t bin;
   // go through seqs, accumulate per-sample stats...
-  //printf("chrom\tpos\tcoverage\n");
+  //fprintf(stderr, "chrom\tpos\tcoverage\n");
   uint64_t tot_bin_covg, tot_bin_pos, last_bin;
+  u32Vec pos;
   for (i = 0; i < header->n_targets; i++) {
-    u32Vec pos;
     kv_init(pos);
 
     tot_bin_covg = 0;
@@ -103,7 +96,7 @@ cmap get_cmap_from_bam(char* bam_file, int covg_threshold) {
           tot_bin_pos += (bin*100 * covg[i][bin]);
         } else{
           if (tot_bin_covg >= covg_threshold) {
-            //printf("%s\t%d\t%d\n", header->target_name[i], tot_bin_pos/tot_bin_covg+50, tot_bin_covg);
+            //fprintf(stderr, "%s\t%d\t%d\n", header->target_name[i], tot_bin_pos/tot_bin_covg+50, tot_bin_covg);
             kv_push(uint32_t, pos, tot_bin_pos/tot_bin_covg+50);
           }
           tot_bin_covg = covg[i][bin];
@@ -113,12 +106,14 @@ cmap get_cmap_from_bam(char* bam_file, int covg_threshold) {
       }
     }
     if(tot_bin_covg > covg_threshold) { // last bin, if necessary
-      //printf("%s\t%d\t%d\n", header->target_name[i], tot_bin_pos/tot_bin_covg+50, tot_bin_covg);
+      //fprintf(stderr, "%s\t%d\t%d\n", header->target_name[i], tot_bin_pos/tot_bin_covg+50, tot_bin_covg);
       kv_push(uint32_t, pos, tot_bin_pos/tot_bin_covg+50);
     }
+    // put in the end of the chromosome
+    kv_push(uint32_t, pos, rlen_array[i]);
 
     add_map(&c, pos.a, kv_size(pos), 1);
-    kv_destroy(pos);
+    kv_destroy(pos); // the values were copied to an array of labels, so we can free these positions
   }
 
   bam_hdr_destroy(header);
