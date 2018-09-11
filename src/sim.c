@@ -64,7 +64,7 @@ KSEQ_INIT(gzFile, gzread)
 KSORT_INIT_GENERIC(uint32_t)
 
 
-void fragment_seq(kstring_t* seq, seqVec* frag_seqs, float frag_prob) {
+void fragment_seq(kstring_t* seq, seqVec* frag_seqs, posVec* frag_positions, uint32_t ref, float frag_prob) {
   int st = 0, i;
   for(i = 1; i < seq->l; i++) {
     if(rand() * (1.0 / RAND_MAX) < frag_prob) {
@@ -74,6 +74,10 @@ void fragment_seq(kstring_t* seq, seqVec* frag_seqs, float frag_prob) {
       frag_seq->s = seq->s+st;
       //printf("added sequence of length %d\n", frag_seq->l);
       kv_push(kstring_t*, *frag_seqs, frag_seq);
+      ref_pos rp;
+      rp.ref_id = ref;
+      rp.pos = i;
+      kv_push(ref_pos, *frag_positions, rp);
       st = i;
     }
   }
@@ -185,6 +189,8 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   // vector to hold optical fragments
   fragVec fragments;
   kv_init(fragments);
+  posVec frag_positions;
+  kv_init(frag_positions);
   seqVec frag_seqs;
   kv_init(frag_seqs);
 
@@ -194,6 +200,7 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   fprintf(stderr, "Fragmenting and digesting up to %fx coverage\n", coverage*10);
 
   int l;
+  uint32_t ref; // reference seq ID
   while ((l = kseq_read(seq)) >= 0) {
     // name: seq->name.s, seq: seq->seq.s, length: l
     //fprintf(stderr, "Reading sequence '%s' (%i bp).\n", seq->name.s, l);
@@ -202,9 +209,10 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
     // digest 10x as many genomes as the coverage we want, then we'll sample down
     for(j = 0; j < coverage*10; j++) {
       frag_seqs.n = 0; // reset the intermediate fragment sequences each round
-      fragment_seq(&seq->seq, &frag_seqs, frag_prob);
+      fragment_seq(&seq->seq, &frag_seqs, &frag_positions, ref, frag_prob);
       bn_map(frag_seqs, &fragments, motifs, n_motifs, fn, fp, stretch_mean, stretch_std, resolution_min);
     }
+    ref++;
   }
   kseq_destroy(seq);
   kv_destroy(frag_seqs);
@@ -214,6 +222,8 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   // bimera_prob, trimera_prob, quadramera_prob
   fragVec observed;
   kv_init(observed);
+  posVec observed_pos;
+  kv_init(observed_pos);
   size_t f0, f1;
   uint64_t target_coverage = (uint64_t)((double)coverage * genome_size);
   //fprintf(stderr, "Sampling and chimerizing down to %fx coverage (~%u bp)\n", coverage, target_coverage);
@@ -255,10 +265,10 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
     */
 
     kv_push(u32Vec*, observed, kv_A(fragments, f0));
+    kv_push(ref_pos, observed_pos, kv_A(frag_positions, f0)); // does not record the other parts (if any) of a chimera
 
     // add to our running coverage
     size_t f0_size = kv_size(*kv_A(fragments, f0));
-    uint32_t f0_0 = kv_A(*kv_A(fragments, f0), 0);
     i += kv_A(*kv_A(fragments, f0), kv_size(*kv_A(fragments, f0))-1);
 
     kv_A(fragments, f0) = NULL; // but we can clear the pointer so that it's not sampled again
@@ -268,12 +278,16 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   for(i = 0; i < kv_size(fragments); i++)
     if(kv_A(fragments, i) != NULL)
       kv_destroy(*kv_A(fragments, i));
+  kv_destroy(frag_positions);
   kv_destroy(fragments);
 
   cmap c;
   init_cmap(&c);
+  c.n_rec_seqs = n_motifs;
+  c.rec_seqs = motifs;
   for(i = 0; i < kv_size(observed); i++) {
     add_map(&c, kv_A(observed, i)->a, kv_size(*kv_A(observed, i)), 1);
   }
+  c.source = &observed_pos;
   return c;
 }

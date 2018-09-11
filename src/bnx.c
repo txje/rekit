@@ -81,6 +81,10 @@ int read_bnx_header(FILE *fp, cmap *c) {
       c->labels = malloc(c->n_maps * sizeof(label*));
     }
 	}
+  if(c->n_maps <= 0) {
+    fprintf(stderr, "Number of molecules header line not found or 0\n");
+    return 1;
+  }
 	return 0;
 }
 
@@ -122,7 +126,7 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
   }
   token = strtok(buf, delim); // labelchannel
   int channel = atoi(token);
-  token = strtok(buf, delim); // first label pos
+  token = strtok(NULL, delim); // first label pos
   i = 0;
   while(token != NULL) {
     assert(i < c->map_lengths[mapid]);
@@ -140,7 +144,7 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
   }
   token = strtok(buf, delim); // labelchannel
   assert(strcmp(token, "QX11") == 0);
-  token = strtok(buf, delim); // first label pos
+  token = strtok(NULL, delim); // first label pos
   i = 0;
   while(token != NULL) {
     assert(i < c->map_lengths[mapid]);
@@ -155,7 +159,7 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
   }
   token = strtok(buf, delim); // labelchannel
   assert(strcmp(token, "QX12") == 0);
-  token = strtok(buf, delim); // first label pos
+  token = strtok(NULL, delim); // first label pos
   i = 0;
   while(token != NULL) {
     assert(i < c->map_lengths[mapid]);
@@ -196,10 +200,10 @@ int write_bnx(cmap *c, FILE* fp) {
   fprintf(fp, "#Qh QualityScoreID  QualityScores[N]\n");
   fprintf(fp, "#Qf string  float[N]\n");
   fprintf(fp, "# Quality Score QX11: Label SNR for channel 1\n");
-  fprintf(fp, "# Quality Score QX12: Label Intensity for channel 1:\n");
+  fprintf(fp, "# Quality Score QX12: Label Intensity for channel 1\n");
 
   for(i = 0; i < c->n_maps; i++) {
-    fprintf(fp, "%d\t%d\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t%d\tsim\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", 0, i+1, (float)c->ref_lengths[i], 0, 0, c->map_lengths[i], i+1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    fprintf(fp, "%d\t%d\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t%d\tsim\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", 0, i+1, (float)c->ref_lengths[i], 0.0, 0.0, c->map_lengths[i]-1, i+1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     fprintf(fp, "1");
     for(k = 0; k < c->map_lengths[i]; k++) {
       fprintf(fp, "\t%.2f", (float)c->labels[i][k].position);

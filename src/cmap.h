@@ -5,6 +5,21 @@
 #include "klib/kvec.h"
 #include "klib/kstring.h"
 
+// various vectors to handle fragment/label data
+typedef kvec_t(uint8_t) byteVec;
+
+typedef kvec_t(uint32_t) u32Vec;
+typedef kvec_t(u32Vec*) fragVec;
+
+typedef kvec_t(kstring_t*) seqVec;
+
+typedef struct ref_pos {
+  uint32_t ref_id;
+  uint32_t pos;
+} ref_pos;
+
+typedef kvec_t(ref_pos) posVec;
+
 /*
 
 # CMAP File Version:	0.1
@@ -34,15 +49,8 @@ typedef struct cmap {
   size_t* map_lengths;
   char** rec_seqs;
   size_t n_rec_seqs;
+  posVec* source;
 } cmap;
-
-// various vectors to handle fragment/label data
-typedef kvec_t(uint8_t) byteVec;
-
-typedef kvec_t(uint32_t) u32Vec;
-typedef kvec_t(u32Vec*) fragVec;
-
-typedef kvec_t(kstring_t*) seqVec;
 
 // cmap and associated IO functions
 char* get_val(char* buf);

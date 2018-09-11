@@ -52,14 +52,13 @@ KHASH_MAP_INIT_INT(qgramHash, matchVec);
 KHASH_MAP_INIT_INT(matchHash, pairVec);
 
 // similar to klib's khash.h, except we explicitly limit the length - it doesn't have to be null-terminated
-static kh_inline khint_t qgram_hash(uint8_t *s, int k)
-{
+static kh_inline khint_t qgram_hash(uint8_t *s, int k) {
   int i;
   khint_t h = (khint_t)*s;
-  if (h) for (i = 1 ; i < k; i++) h = (h << 5) - h + (khint_t)*(s+i);
+  for (i = 1 ; i < k; i++) h = (h << 5) - h + (khint_t)*(s+i);
   return h;
 }
 
-int hash_rmap(byteVec* frags, size_t n_frags, int q, int threshold, int max_qgrams, int readLimit);
+int hash_cmap(cmap b, cmap c, int q, int threshold, int max_qgrams, int readLimit, int bin_size);
 
 #endif /* __HASH_H__ */

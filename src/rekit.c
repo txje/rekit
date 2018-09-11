@@ -33,7 +33,7 @@
 
 #include "cmap.h"
 #include "bnx.h"
-//#include "hash.h"
+#include "hash.h"
 //#include "lsh.h"
 //#include "dtw.h"
 #include "sim.h"
@@ -75,6 +75,7 @@ void usage() {
   printf("    --stretch-mean: Fragment stretch mean (default: 1.0)\n");
   printf("    --stretch-std: Fragment stretch standard deviation (default: 0.05)\n");
   printf("    --min-frag: Minimum detectable fragment size (default: 500)\n");
+  printf("    --source-output: Output the reference positions of the simulated molecules to the given file\n");
   printf("  label options:\n");
   printf("    --coverage-threshold: Read coverage required (in ~300bp window) to call a label site (default: 10)\n");
 }
@@ -89,6 +90,7 @@ static struct option long_options[] = {
   { "stretch-std",            required_argument, 0, 0 },
   { "coverage-threshold",     required_argument, 0, 0 },
   { "help",                   no_argument,       0, 0 },
+  { "source-output",          required_argument, 0, 0 },
   { 0, 0, 0, 0}
 };
 
@@ -99,6 +101,7 @@ int main(int argc, char *argv[]) {
   char* cmap_file = NULL; // .cmap file path/name (either reference or consensus)
   char* bam_file = NULL; // .bam file path/name (aligned)
   char* restriction_seq = NULL; // restriction enzyme or label recognition sequence (must also be reverse complemented if not symmetrical)
+  char* source_outfile = NULL; // output file for the truth/source positions
   int q = 5; // q-gram size
   int h = 10; // number of hashes
   int verbose = 0;
@@ -167,6 +170,7 @@ int main(int argc, char *argv[]) {
         else if (long_idx == 5) stretch_std = atof(optarg); // --stretch-std
         else if (long_idx == 6) covg_threshold = atoi(optarg); // --coverage-threshold
         else if (long_idx == 7) {usage(); return 0;} // --help
+        else if (long_idx == 8) source_outfile = optarg; // --source-output
       default:
         usage();
         return 1;
@@ -174,8 +178,6 @@ int main(int argc, char *argv[]) {
   }
 
   // CMAP test
-  //cmap c = read_cmap(cmap_file);
-  //printf("CMAP '%s': %d maps w/%d recognition sites\n", cmap_file, c.n_maps, c.n_rec_seqs);
   //write_cmap(&c, fopen("test.cmap", "w"));
 
   int index;
@@ -271,26 +273,30 @@ int main(int argc, char *argv[]) {
   }
 
   else if(strcmp(command, "hash") == 0) {
-    if(argc < 6) {
-      printf("Not enough arguments for 'aln'.\n\n");
-      usage();
+    if(bnx_file == NULL) {
+      fprintf(stderr, "BNX file (-b) required\n");
+      return 1;
+    }
+    if(cmap_file == NULL) {
+      fprintf(stderr, "CMAP file (-c) required\n");
       return 1;
     }
 
-    // convert map of nicks to a simple array of byte vectors representing subfragment lengths
-    // discretize by 1kb if doing any hashing, do no dicretization if doing DTW
-    // -1 can be changed to a positive to number to limit the total number of fragments that are considered
-    /*
-    byteVec *frags = nicks_to_frags_bin(&map, 1000, -1, 1, 1, 1000);
+    printf("# Loading '%s'...\n", bnx_file);
+    time_t t0 = time(NULL);
+    cmap b = read_bnx(bnx_file);
+    time_t t1 = time(NULL);
+    printf("# Loaded %d molecules in %.2f seconds\n", b.n_maps, (t1-t0));
 
-    int ret = hash_rmap(frags, n_frags, q, threshold, max_qgrams, -1);
+    printf("# Loading '%s'...\n", cmap_file);
+    t0 = time(NULL);
+    cmap c = read_cmap(cmap_file);
+    t1 = time(NULL);
+    printf("# Loaded CMAP '%s': %d maps w/%d recognition sites in %.2f seconds\n", cmap_file, c.n_maps, c.n_rec_seqs, t1-t0);
 
-    // free
-    for(i = 0; i < n_frags; i++) {
-      kv_destroy(frags[i]);
-    }
-    free(frags);
-    */
+    int ret = hash_cmap(b, c, q, threshold, max_qgrams, 100, 1000);
+
+    // TODO: clean up cmap/bnx memory
   }
 
   else if(strcmp(command, "simulate") == 0) {
@@ -313,6 +319,16 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "-- Running optical mapping simulation --\n");
     c = simulate_bnx(fasta_file, rseqs, 1, break_rate, fn, fp, stretch_mean, stretch_std, min_frag, coverage);
     ret = write_bnx(&c, stdout);
+
+    if(source_outfile != NULL) {
+      fprintf(stderr, "Writing truth/source positions to '%s'\n", source_outfile);
+	    FILE *fp = fopen(source_outfile, "w");
+      fprintf(fp, "ref_id\tstart_pos\n");
+      for(i = 0; i < kv_size(*c.source); i++) {
+        fprintf(fp, "%d\t%d\n", kv_A(*c.source, i).ref_id, kv_A(*c.source, i).pos);
+      }
+      fclose(fp);
+    }
   }
 
   // free everything
