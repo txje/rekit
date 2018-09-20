@@ -142,8 +142,8 @@ khash_t(matchHash)* lookup(label* labels, size_t n_labels, uint32_t read_id, int
   return hits;
 }
 
-void query_db(cmap b, int k, khash_t(qgramHash) *db, int readLimit, int max_qgrams, int threshold, int bin_size) {
-  int i, c;
+void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int max_qgrams, int threshold, int bin_size) {
+  int i, j;
   uint32_t target;
   int max_chains = 10; // this can be a parameter
   int match_score = 4; // ? idk what to do with this
@@ -188,10 +188,10 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, int readLimit, int max_qgra
 
       //if(kv_size(target_hits) >= threshold && target != f) {
 
-      for(c = 0; c < n_chains; c++) {
-        printf("%d,%d,%d,%d", f, qrev, target, kv_size(chains[c]));
-        for(i = 0; i < kv_size(chains[c]); i++)
-          printf(",%d:%d", kv_A(chains[c], i).qpos, kv_A(chains[c], i).tpos);
+      for(j = 0; j < n_chains; j++) {
+        printf("%d,%d,%d,%d", f, qrev, target, kv_size(chains[j]));
+        for(i = 0; i < kv_size(chains[j]); i++)
+          printf(",%u(%u):%u(%u)", kv_A(chains[j], i).qpos, b.labels[f][kv_A(chains[j], i).qpos].position, kv_A(chains[j], i).tpos, c.labels[target][kv_A(chains[j], i).tpos].position);
         printf("\n");
       }
     }
@@ -228,7 +228,7 @@ int hash_cmap(cmap b, cmap c, int q, int threshold, int max_qgrams, int readLimi
 
   // ---------------------------- Look up queries in db ------------------------------
   printf("# Querying %d bnx fragments\n", b.n_maps);
-  query_db(b, q, db, readLimit, max_qgrams, threshold, bin_size);
+  query_db(b, q, db, c, readLimit, max_qgrams, threshold, bin_size);
 
   t1 = time(NULL);
   printf("# Queried and output in %d seconds\n", (t1-t0));
