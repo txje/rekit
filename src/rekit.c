@@ -165,6 +165,7 @@ int main(int argc, char *argv[]) {
           fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
         return 1;
       case 0:
+        //fprintf(stderr, "option %s\n", long_options[long_idx].name);
         if (long_idx == 0) break_rate = atof(optarg); // --break-rate
         else if (long_idx == 1) fn = atof(optarg); // --fn
         else if (long_idx == 2) fp = atof(optarg); // --fp
@@ -174,6 +175,7 @@ int main(int argc, char *argv[]) {
         else if (long_idx == 6) covg_threshold = atoi(optarg); // --coverage-threshold
         else if (long_idx == 7) {usage(); return 0;} // --help
         else if (long_idx == 8) source_outfile = optarg; // --source-output
+        break;
       default:
         usage();
         return 1;
