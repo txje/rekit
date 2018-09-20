@@ -66,6 +66,7 @@ KSORT_INIT_GENERIC(uint32_t)
 
 void fragment_seq(kstring_t* seq, seqVec* frag_seqs, posVec* frag_positions, uint32_t ref, float frag_prob) {
   uint32_t st = 0, i;
+  // this can be sped up dramatically by picking break sites from a distribution instead of testing site by site
   for(i = 1; i < seq->l; i++) {
     if(rand() * (1.0 / RAND_MAX) < frag_prob) {
       // we'll actually just return each fragment string as a pointer and length into the reference sequence - remember this.
@@ -221,9 +222,6 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   kseq_destroy(seq);
   kv_destroy(frag_seqs);
   gzclose(f);
-
-  for(i = 0; i < kv_size(frag_positions); i++)
-    fprintf(stderr, "fragment %d position: %u : %u\n", i, kv_A(frag_positions, i).ref_id, kv_A(frag_positions, i).pos);
   
   // sample randomly down to the requested coverage, include chimeras
   // bimera_prob, trimera_prob, quadramera_prob
@@ -270,7 +268,6 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
 
     kv_push(u32Vec*, observed, kv_A(fragments, f0));
     kv_push(ref_pos, observed_pos, kv_A(frag_positions, f0)); // does not record the other parts (if any) of a chimera
-    fprintf(stderr, "observing fragment %d position: %u : %u\n", f0, kv_A(frag_positions, f0).ref_id, kv_A(frag_positions, f0).pos);
 
     // add to our running coverage
     size_t f0_size = kv_size(*kv_A(fragments, f0));
