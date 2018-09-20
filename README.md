@@ -1,6 +1,6 @@
 rekit
 -----
-A toolkit for efficiently processing restriction maps and such
+A toolkit for efficiently processing optical maps and such
 
 
 Tools may eventually include, in order:
@@ -9,19 +9,25 @@ Existing features:
   * .bnx and .cmap format parsers
   * in silico digestion -> cmap
   * alignment-based labeling (BAM) -> cmap
-  * in silico restriction mapping (simulation) w/some error profile
+  * in silico optical mapping (simulation) w/some error profile
+  * feature-based molecule/cmap alignment with DTW refinement
 
-In progress features:
-  * pairwise rmap overlap
-  * rmap overlap graph -> consensus map (cmap)
-  * cmap -> reference alignment
-  * structural variant prediction from cmap -> ref alignment
+Future features:
+  * constructing consensus maps from pairwise molecule alignments
+  * structural variant prediction from alignments
 
 All code is distributed under the MIT license.
 
-BNX parsing and associated data structures are originally from https://github.com/yanlinlin82/bntools
+Some BNX parsing and associated data structures were borrowed from https://github.com/yanlinlin82/bntools
 but have been significantly modified.
 
+Requirements
+------------
+
+These need to be anywhere that the header and library files can be found by your compiler
+
+  * zlib (https://zlib.net/)
+  * htslib (https://github.com/samtools/htslib)
 
 Installation
 ------------
@@ -56,7 +62,7 @@ Usage
         -f: fasta: Reference sequence to simulate from
         -a: bam: BAM alignment file
         -r: cutseq: Recognition/label site sequence
-        -q: Size of q-gram/k-mer to hash
+        -q: Size of q-gram/k-mer to hash (default: 4)
         -h: Number of hash functions to apply
         -s: Seed to random number generator
         -t: threshold: Minimum number of q-grams to declare a match
@@ -70,5 +76,6 @@ Usage
         --stretch-mean: Fragment stretch mean (default: 1.0)
         --stretch-std: Fragment stretch standard deviation (default: 0.05)
         --min-frag: Minimum detectable fragment size (default: 500)
+        --source-output: Output the reference positions of the simulated molecules to the given file
       label options:
         --coverage-threshold: Read coverage required (in ~300bp window) to call a label site (default: 10)
