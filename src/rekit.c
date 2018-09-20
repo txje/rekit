@@ -61,7 +61,7 @@ void usage() {
   printf("    -f: fasta: Reference sequence to simulate from\n");
   printf("    -a: bam: BAM alignment file\n");
   printf("    -r: cutseq: Recognition/label site sequence\n");
-  printf("    -q: Size of q-gram/k-mer to hash\n");
+  printf("    -q: Size of q-gram/k-mer to hash (default: 4)\n");
   printf("    -h: Number of hash functions to apply\n");
   printf("    -s: Seed to random number generator\n");
   printf("    -t: threshold: Minimum number of q-grams to declare a match\n");
@@ -102,7 +102,7 @@ int main(int argc, char *argv[]) {
   char* bam_file = NULL; // .bam file path/name (aligned)
   char* restriction_seq = NULL; // restriction enzyme or label recognition sequence (must also be reverse complemented if not symmetrical)
   char* source_outfile = NULL; // output file for the truth/source positions
-  int q = 5; // q-gram size
+  int q = 4; // q-gram size
   int h = 10; // number of hashes
   int verbose = 0;
   int threshold = 0;

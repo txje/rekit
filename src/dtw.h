@@ -53,6 +53,6 @@ static float score(uint32_t a, uint32_t b, uint32_t neutral_deviation) {
   return 1.0 - (diff / (float)neutral_deviation);
 }
 
-int dtw_rmap(u32Vec* frags, size_t n_frags, int threshold);
+result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, pathvec *path, int8_t ins_score, int8_t del_score, uint32_t neutral_deviation);
 
 #endif /* __DTW_H__ */

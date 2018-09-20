@@ -32,6 +32,7 @@
 #include "klib/khash.h" // C hash table/dictionary
 #include "bnx.h"
 #include "hash.h"
+#include "dtw.h"
 #include "chain.c"
 #include "klib/ksort.h"
 
@@ -44,6 +45,19 @@ uint8_t* get_fragments(label* labels, size_t n_labels, int bin_size) {
     return frags;
   }
   frags[0] = labels[0].position / bin_size; // this *may* overflow if a fragment is >255 * bin_size, but it will just hash to val % 256
+  int i;
+  for(i = 1; i < n_labels; i++) {
+    frags[i] = (labels[i].position - labels[i-1].position) / bin_size;
+  }
+  return frags;
+}
+
+uint32_t* u32_get_fragments(label* labels, size_t n_labels, int bin_size) {
+  uint32_t* frags = malloc(sizeof(uint32_t) * n_labels);
+  if(n_labels == 0) {
+    return frags;
+  }
+  frags[0] = labels[0].position / bin_size;
   int i;
   for(i = 1; i < n_labels; i++) {
     frags[i] = (labels[i].position - labels[i-1].position) / bin_size;
@@ -72,7 +86,7 @@ int insert_rmap(label* labels, size_t n_labels, uint32_t read_id, int k, unsigne
   for(i = 0; i <= n_labels-k; i++) {
     //khint_t qgram = qgram_hash((frags+i), k); // khint_t is probably u32
     khint_t qgram = xratio_hash((labels+i), 100); // khint_t is probably u32
-    printf("# %dth %d-gram: %u\n", i, k, qgram);
+    //printf("# %dth %d-gram: %u\n", i, k, qgram);
 
     // insert qgram:readId,i into db
     bin = kh_put(qgramHash, db, qgram, &absent);
@@ -118,7 +132,7 @@ khash_t(matchHash)* lookup(label* labels, size_t n_labels, uint32_t read_id, int
   for(i = 0; i <= n_labels-k; i++) {
     //khint_t qgram = qgram_hash((frags+i), k); // khint_t is probably u32
     khint_t qgram = xratio_hash((labels+i), 100); // khint_t is probably u32
-    printf("# %dth %d-gram: %u\n", i, k, qgram);
+    //printf("# %dth %d-gram: %u\n", i, k, qgram);
 
     bin = kh_get(qgramHash, db, qgram);
     if(bin == kh_end(db)) // key not found, IDK what happens if you don't test this
@@ -152,7 +166,7 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int 
 
   uint32_t f = 0;
   while (f < b.n_maps) {
-    unsigned char qrev = 0; // forward strand only right now - the database is also currently only fw, eventually we should query both
+    unsigned char qrev = 0; // TODO: forward strand only right now - the database is also currently only fw, eventually we should query both
 
     printf("# Hashing fragment of size %d with %d nicks\n", b.ref_lengths[f], b.map_lengths[f]);
     khash_t(matchHash) *hits = lookup(b.labels[f], b.map_lengths[f], f, k, qrev, db, max_qgrams, bin_size); // forward strand only right now
@@ -189,6 +203,45 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int 
       //if(kv_size(target_hits) >= threshold && target != f) {
 
       for(j = 0; j < n_chains; j++) {
+
+        // dynamic time warping
+        // extract ref labels - expand bounds to encompass unmatched labels within query range
+        int rst = kv_A(chains[j], 0).tpos;
+        // esimated start position on ref is (anchor[0]_ref_pos - anchor[0]_query_pos)
+        int est_rst = c.labels[target][kv_A(chains[j], 0).tpos].position - b.labels[f][kv_A(chains[j], 0).qpos].position;
+        while(rst > 0 && c.labels[target][rst].position > est_rst)
+          rst--;
+        int ren = kv_A(chains[j], kv_size(chains[j])-1).tpos;
+        // estimated end position on ref is (anchor[n]_ref_pos + (query_length - anchor[n]_query_pos))
+        int est_ren = c.labels[target][kv_A(chains[j], kv_size(chains[j])-1).tpos].position + (b.labels[f][b.map_lengths[f]-1].position - b.labels[f][kv_A(chains[j], kv_size(chains[j])-1).qpos].position);
+        while(ren < c.map_lengths[target]-1 && c.labels[target][ren].position < est_ren)
+          ren++;
+        //fprintf(stderr, "est ref pos %u - %u\n", est_rst, est_ren);
+        //fprintf(stderr, "r indices %u - %u\n", rst, ren);
+
+        pathvec path;
+        kv_init(path);
+        // get fragment distances for DTW (no dicretization)
+        uint32_t* qfrags = u32_get_fragments(b.labels[f], b.map_lengths[f], 1);
+        uint32_t* rfrags = u32_get_fragments(c.labels[target]+rst, ren-rst+1, 1);
+        result aln = dtw(qfrags, rfrags, b.map_lengths[f], ren-rst+1, &path, -1, -1, 1000); // ins_score, del_score, neutral_deviation
+        free(qfrags);
+        free(rfrags);
+        if(aln.failed) {
+          printf("q %d : t %d DTW failed\n", f, target);
+          continue;
+        }
+
+        if(!aln.failed) { // && aln.score >= threshold) {
+          // q, t, qstart, qend, qlen, tstart, tend, tlen, score
+          printf("DTW result: %d,%d,%d,%d,%d,%d,%d,%d,%f\n", f, target, aln.qstart, aln.qend, b.map_lengths[f], aln.tstart, aln.tend, ren-rst+1, aln.score);
+          printf("path: ");
+          for(i = 0; i < kv_size(path); i++) {
+            printf("%c ", kv_A(path, i) == 0 ? '.' : (kv_A(path, i) == 1 ? 'I' : 'D'));
+          }
+          printf("\n");
+        }
+
         printf("%d,%d,%d,%d", f, qrev, target, kv_size(chains[j]));
         for(i = 0; i < kv_size(chains[j]); i++)
           printf(",%u(%u):%u(%u)", kv_A(chains[j], i).qpos, b.labels[f][kv_A(chains[j], i).qpos].position, kv_A(chains[j], i).tpos, c.labels[target][kv_A(chains[j], i).tpos].position);
