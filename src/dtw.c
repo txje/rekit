@@ -59,7 +59,7 @@ result ovl_align(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, pa
   }
 
   // must be dynamically allocated to prevent stack overflows (on *some* systems)
-  // to make this more efficient for our uses, they could be allocated once for the larget sequences and reused
+  // to make this more efficient for our uses, they could be allocated once for the largest sequences and reused
   float* score_matrix[qlen+1];
   uint8_t* direction_matrix[qlen+1];
   int i;

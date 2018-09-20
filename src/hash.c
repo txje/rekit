@@ -32,7 +32,11 @@
 #include "klib/khash.h" // C hash table/dictionary
 #include "bnx.h"
 #include "hash.h"
+#include "chain.c"
+#include "klib/ksort.h"
 
+#define pos_pair_lt(a,b) ((a).tpos < (b).tpos)
+KSORT_INIT(pos_pair_cmp, posPair, pos_pair_lt)
 
 uint8_t* get_fragments(label* labels, size_t n_labels, int bin_size) {
   uint8_t* frags = malloc(sizeof(uint8_t) * n_labels);
@@ -66,7 +70,8 @@ int insert_rmap(label* labels, size_t n_labels, uint32_t read_id, int k, unsigne
   khint_t bin; // hash bin (result of kh_put)
   uint8_t* frags = get_fragments(labels, n_labels, bin_size);
   for(i = 0; i <= n_labels-k; i++) {
-    khint_t qgram = qgram_hash((frags+i), k); // khint_t is probably u32
+    //khint_t qgram = qgram_hash((frags+i), k); // khint_t is probably u32
+    khint_t qgram = xratio_hash((labels+i), 100); // khint_t is probably u32
     printf("# %dth %d-gram: %u\n", i, k, qgram);
 
     // insert qgram:readId,i into db
@@ -111,8 +116,9 @@ khash_t(matchHash)* lookup(label* labels, size_t n_labels, uint32_t read_id, int
   uint8_t* frags = get_fragments(labels, n_labels, bin_size);
   if(n_labels < k) return hits;
   for(i = 0; i <= n_labels-k; i++) {
-    khint_t qgram = qgram_hash((frags+i), k); // khint_t is probably u32
-    printf("# %dth %d-gram: %u\n", i, k, qgram);
+    //khint_t qgram = qgram_hash((frags+i), k); // khint_t is probably u32
+    khint_t qgram = xratio_hash((labels+i), 100); // khint_t is probably u32
+    //printf("# %dth %d-gram: %u\n", i, k, qgram);
 
     bin = kh_get(qgramHash, db, qgram);
     if(bin == kh_end(db)) // key not found, IDK what happens if you don't test this
@@ -137,8 +143,12 @@ khash_t(matchHash)* lookup(label* labels, size_t n_labels, uint32_t read_id, int
 }
 
 void query_db(cmap b, int k, khash_t(qgramHash) *db, int readLimit, int max_qgrams, int threshold, int bin_size) {
-  int i;
+  int i, c;
   uint32_t target;
+  int max_chains = 10; // this can be a parameter
+  int match_score = 4; // ? idk what to do with this
+  int max_gap = 10; // need to test/refine this
+  int min_chain_length = 3; // need to test/refine this
 
   uint32_t f = 0;
   while (f < b.n_maps) {
@@ -155,12 +165,33 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, int readLimit, int max_qgra
       if (!kh_exist(hits, iter)) continue;
       target = kh_key(hits, iter);
       target_hits = kh_val(hits, iter);
-      printf("hit target %d %d times\n", target, kv_size(target_hits));
-      if(kv_size(target_hits) >= threshold && target != f) {
 
-        printf("%d,%d,%d,%d", f, qrev, target, kv_size(target_hits));
-        for(i = 0; i < kv_size(target_hits); i++)
-          printf(",%d:%d", kv_A(target_hits, i).qpos, kv_A(target_hits, i).tpos);
+      //sort anchor pairs by target pos increasing
+      ks_mergesort(pos_pair_cmp, kv_size(target_hits), target_hits.a, 0);
+
+      pairVec* chains = chain(&target_hits, max_chains, match_score, max_gap, min_chain_length);
+      int n_chains = 0;
+      // count chains (if fewer than max_chains, the chains array is terminated by an empty chain vector)
+      for(i = 0; i < max_chains; i++) {
+        if(kv_size(chains[i]) > 0)
+          n_chains = i+1;
+        else
+          break;
+      }
+      printf("hit target %d %d times\n", target, kv_size(target_hits));
+
+      printf("%d chains found with anchor sizes: ", n_chains);
+      for(i = 0; i < n_chains; i++) {
+        printf("%d, ", kv_size(chains[i]));
+      }
+      printf("\n");
+
+      //if(kv_size(target_hits) >= threshold && target != f) {
+
+      for(c = 0; c < n_chains; c++) {
+        printf("%d,%d,%d,%d", f, qrev, target, kv_size(chains[c]));
+        for(i = 0; i < kv_size(chains[c]); i++)
+          printf(",%d:%d", kv_A(chains[c], i).qpos, kv_A(chains[c], i).tpos);
         printf("\n");
       }
     }
