@@ -120,7 +120,7 @@ int main(int argc, char *argv[]) {
 
   int opt, long_idx;
   opterr = 0;
-  while ((opt = getopt_long(argc, argv, "b:c:q:hf:r:t:m:vx:a:", long_options, &long_idx)) != -1) {
+  while ((opt = getopt_long(argc, argv, "b:c:q:hf:r:t:m:vx:a:s:", long_options, &long_idx)) != -1) {
     switch (opt) {
       case 'b':
         bnx_file = optarg;
@@ -153,8 +153,11 @@ int main(int argc, char *argv[]) {
       case 'a':
         bam_file = optarg;
         break;
+      case 's':
+        source_outfile = optarg;
+        break;
       case '?':
-        if (optopt == 'b' || optopt == 'c' || optopt == 'q' || optopt == 'r' || optopt == 'f' || optopt == 't' || optopt == 'm' || optopt == 'x' || optopt == 'a')
+        if (optopt == 'b' || optopt == 'c' || optopt == 'q' || optopt == 'r' || optopt == 'f' || optopt == 't' || optopt == 'm' || optopt == 'x' || optopt == 'a' || optopt == 's')
           fprintf(stderr, "Option -%c requires an argument.\n", optopt);
         else if (isprint (optopt))
           fprintf(stderr, "Unknown option `-%c'.\n", optopt);
@@ -324,8 +327,8 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Writing truth/source positions to '%s'\n", source_outfile);
 	    FILE *fp = fopen(source_outfile, "w");
       fprintf(fp, "ref_id\tstart_pos\n");
-      for(i = 0; i < kv_size(*c.source); i++) {
-        fprintf(fp, "%d\t%d\n", kv_A(*c.source, i).ref_id, kv_A(*c.source, i).pos);
+      for(i = 0; i < kv_size(c.source); i++) {
+        fprintf(fp, "%u\t%u\n", kv_A(c.source, i).ref_id, kv_A(c.source, i).pos);
       }
       fclose(fp);
     }

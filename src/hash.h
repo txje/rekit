@@ -55,23 +55,10 @@ static kh_inline khint_t xratio_hash(label* labels, int bins) {
   //fprintf(stderr, "%d %d %d %d\n", labels[0].position, labels[1].position, labels[2].position, labels[3].position);
   float cr = (((float)labels[2].position - labels[0].position) * ((float)labels[3].position - labels[1].position)) / (((float)labels[2].position - labels[1].position) * ((float)labels[3].position - labels[0].position)); // cross-ratio
   //fprintf(stderr, "x-ratio: %f\n", cr);
-  float crcdf;
-  // cross-ratio CDF (per https://hal.inria.fr/inria-00590012/document)
-  if(cr < 0)
-    crcdf = ((1.0/3 * (cr*(1-cr)*log((cr-1)/cr) - cr + 1.0/2)) + (1.0/3 * ((1-cr) * log(1-cr) + cr) / (cr*cr)));
-  else if(cr == 0)
-    crcdf = 1.0/3;
-  else if(cr < 1)
-    crcdf = (1.0/2 + (1.0/3 * (cr - cr*log(cr) - 1) / ((cr-1)*(cr-1))) + (1.0/3 * ((1-cr) * log(1-cr) + cr) / (cr*cr)));
-  else if(cr == 1)
-    crcdf = 2.0/3;
-  else // if(cr > 1)
-    crcdf = (1 + (1.0/3 * (cr*(1-cr)*log((cr-1)/cr) - cr + 1.0/2)) + (1.0/3 * (cr - cr*log(cr) - 1) / ((cr-1)*(cr-1))));
-  //fprintf(stderr, "crcdf: %f\n", crcdf);
-  // since all of our points are in increasing order, our distribution doesn't really fit this CDF, so we apply a shift/scaling and linear CDF
-  crcdf = (crcdf - (2.0/3)) * 3;
-  float lcrcdf = 2 * crcdf - (crcdf * crcdf);
-  khint_t h = (khint_t)(lcrcdf * bins); // the number of bins used here will impact the accuracy signficantly
+  // cross-ratio CDF (per https://hal.inria.fr/inria-00590012/document), with some modifications
+  // since all of our points are in increasing order, they are actually modeled by only the F1 portion of the CDF
+  float crcdf = (1.0/2 + (cr*(1-cr)*log((cr-1)/cr) - cr + 1.0/2)) * 2;
+  khint_t h = (khint_t)(crcdf * bins); // the number of bins used here will impact the accuracy signficantly
   return h;
 }
 

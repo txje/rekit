@@ -49,7 +49,7 @@ typedef struct cmap {
   size_t* map_lengths;
   char** rec_seqs;
   size_t n_rec_seqs;
-  posVec* source;
+  posVec source;
 } cmap;
 
 // cmap and associated IO functions

@@ -65,7 +65,7 @@ KSORT_INIT_GENERIC(uint32_t)
 
 
 void fragment_seq(kstring_t* seq, seqVec* frag_seqs, posVec* frag_positions, uint32_t ref, float frag_prob) {
-  int st = 0, i;
+  uint32_t st = 0, i;
   for(i = 1; i < seq->l; i++) {
     if(rand() * (1.0 / RAND_MAX) < frag_prob) {
       // we'll actually just return each fragment string as a pointer and length into the reference sequence - remember this.
@@ -76,7 +76,7 @@ void fragment_seq(kstring_t* seq, seqVec* frag_seqs, posVec* frag_positions, uin
       kv_push(kstring_t*, *frag_seqs, frag_seq);
       ref_pos rp;
       rp.ref_id = ref;
-      rp.pos = i;
+      rp.pos = st;
       kv_push(ref_pos, *frag_positions, rp);
       st = i;
     }
@@ -86,6 +86,10 @@ void fragment_seq(kstring_t* seq, seqVec* frag_seqs, posVec* frag_positions, uin
   frag_seq->l = frag_seq->m = i-st;
   frag_seq->s = seq->s+st;
   kv_push(kstring_t*, *frag_seqs, frag_seq);
+  ref_pos rp;
+  rp.ref_id = ref;
+  rp.pos = st;
+  kv_push(ref_pos, *frag_positions, rp);
 }
 
 
@@ -200,7 +204,7 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   fprintf(stderr, "Fragmenting and digesting up to %fx coverage\n", coverage*10);
 
   int l;
-  uint32_t ref; // reference seq ID
+  uint32_t ref = 0; // reference seq ID
   while ((l = kseq_read(seq)) >= 0) {
     // name: seq->name.s, seq: seq->seq.s, length: l
     //fprintf(stderr, "Reading sequence '%s' (%i bp).\n", seq->name.s, l);
@@ -217,6 +221,9 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   kseq_destroy(seq);
   kv_destroy(frag_seqs);
   gzclose(f);
+
+  for(i = 0; i < kv_size(frag_positions); i++)
+    fprintf(stderr, "fragment %d position: %u : %u\n", i, kv_A(frag_positions, i).ref_id, kv_A(frag_positions, i).pos);
   
   // sample randomly down to the requested coverage, include chimeras
   // bimera_prob, trimera_prob, quadramera_prob
@@ -246,12 +253,9 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
       // shift all of the f1 positions over to append to f0
       uint32_t last = kv_A(*kv_A(fragments, f0), kv_size(*kv_A(fragments, f0))-1);
       for(j = 0; j < kv_size(*kv_A(fragments, f1)); j++) {
-        //kv_A(*kv_A(fragments, f1), j) += last;
         kv_push(uint32_t, *kv_A(fragments, f0), kv_A(*kv_A(fragments, f1), j) + last);
       }
 
-      // concatenate f1 to f0 and delete f1
-      //kv_extend(uint32_t, *kv_A(fragments, f0), *kv_A(fragments, f1)); // TODO - this doesn't adjust positions for appended fragments
       kv_destroy(*kv_A(fragments, f1));
       kv_A(fragments, f1) = NULL;
       chimera--;
@@ -266,6 +270,7 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
 
     kv_push(u32Vec*, observed, kv_A(fragments, f0));
     kv_push(ref_pos, observed_pos, kv_A(frag_positions, f0)); // does not record the other parts (if any) of a chimera
+    fprintf(stderr, "observing fragment %d position: %u : %u\n", f0, kv_A(frag_positions, f0).ref_id, kv_A(frag_positions, f0).pos);
 
     // add to our running coverage
     size_t f0_size = kv_size(*kv_A(fragments, f0));
@@ -288,6 +293,6 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   for(i = 0; i < kv_size(observed); i++) {
     add_map(&c, kv_A(observed, i)->a, kv_size(*kv_A(observed, i)), 1);
   }
-  c.source = &observed_pos;
+  c.source = observed_pos;
   return c;
 }

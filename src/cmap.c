@@ -205,7 +205,7 @@ void init_cmap(cmap* c) {
   c->labels = NULL;
   c->rec_seqs = NULL;
   c->n_rec_seqs = 0;
-  c->source = NULL;
+  kv_init(c->source);
 }
 
 // positions should include the end pos of the chromosome

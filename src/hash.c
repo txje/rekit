@@ -118,7 +118,7 @@ khash_t(matchHash)* lookup(label* labels, size_t n_labels, uint32_t read_id, int
   for(i = 0; i <= n_labels-k; i++) {
     //khint_t qgram = qgram_hash((frags+i), k); // khint_t is probably u32
     khint_t qgram = xratio_hash((labels+i), 100); // khint_t is probably u32
-    //printf("# %dth %d-gram: %u\n", i, k, qgram);
+    printf("# %dth %d-gram: %u\n", i, k, qgram);
 
     bin = kh_get(qgramHash, db, qgram);
     if(bin == kh_end(db)) // key not found, IDK what happens if you don't test this
