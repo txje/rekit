@@ -182,17 +182,14 @@ cmap read_cmap(const char *fn) {
     return c;
   }
 
-  printf("Reading header...\n");
 	if (read_cmap_header(fp, &c) != 0) {
     fprintf(stderr, "File '%s' header could not be read\n", fn);
 		fclose(fp);
 		return c;
 	}
-  printf("Reading lines...\n");
 	while (read_cmap_line(fp, &c) == 0) {
     // we're just looping through all the lines
 	}
-  printf("Done reading lines...\n");
 
 	fclose(fp);
 	return c;

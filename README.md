@@ -54,7 +54,7 @@ Usage
       overlap  -b
       align    -b
       hash     -b
-      simulate -frx --break-rate --fn --fp --min-frag --stretch-mean --stretch-std
+      simulate -frx --break-rate --fn --fp --min-frag --stretch-mean --stretch-std --source-output
       digest   -fr
       label    -a
         -b: bnx: A single BNX file containing molecules

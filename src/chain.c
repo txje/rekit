@@ -61,6 +61,7 @@ pairVec* chain(pairVec* anchors, int max_chains, int match_score, int max_gap, i
   ks_mergesort(score_pos_cmp, kv_size(*anchors), scores, 0);
 
   // build non-overlapping chains from highest to lowest score
+  // and merge overlapping chains
   // we're going to use these vectors in a way they're not really supposed to be used (like a normal array) so that this function will be backwards-compatible with the pairVec
   pairVec* chains = malloc(sizeof(pairVec) * max_chains);
   int c; // chain index

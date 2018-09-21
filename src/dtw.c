@@ -50,10 +50,12 @@ v |
  *
  * First row and column are initialized to zero, and alignment must reach either the last row or column
  */
-result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, pathvec *path, int8_t ins_score, int8_t del_score, uint32_t neutral_deviation) {
+result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t ins_score, int8_t del_score, uint32_t neutral_deviation) {
+  result res;
+
   if(tlen == 0 || qlen == 0) {
-    result res;
     res.failed = 1;
+    res.score = -1;
     // other fields are unset and unreliable
     return res;
   }
@@ -145,8 +147,9 @@ result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, pathvec 
 
   x = max_x;
   y = max_y;
+  kv_init(res.path);
   while(y > 0 && x > 0) {
-    kv_push(uint8_t, *path, direction_matrix[y][x]);
+    kv_push(uint8_t, res.path, direction_matrix[y][x]);
     if(direction_matrix[y][x] == MATCH) {
       x--;
       y--;
@@ -157,7 +160,6 @@ result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, pathvec 
     }
   }
 
-  result res;
   res.score = score_matrix[max_y][max_x];
   res.qstart = y;
   res.qend = max_y;

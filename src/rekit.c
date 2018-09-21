@@ -53,7 +53,7 @@ void usage() {
   printf("  overlap  -b\n");
   printf("  align    -b\n");
   printf("  hash     -b\n");
-  printf("  simulate -frx --break-rate --fn --fp --min-frag --stretch-mean --stretch-std\n");
+  printf("  simulate -frx --break-rate --fn --fp --min-frag --stretch-mean --stretch-std --source-output\n");
   printf("  digest   -fr\n");
   printf("  label    -a\n");
   printf("    -b: bnx: A single BNX file containing molecules\n");
@@ -64,9 +64,9 @@ void usage() {
   printf("    -q: Size of q-gram/k-mer to hash (default: 4)\n");
   printf("    -h: Number of hash functions to apply\n");
   printf("    -s: Seed to random number generator\n");
-  printf("    -t: threshold: Minimum number of q-grams to declare a match\n");
+  printf("    -t: Minimum number of q-gram/cross-ratio anchors in a chain (default: 1)\n");
   printf("    -m: max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored\n");
-  printf("    -d: threshold: Score threshold to report alignment\n");
+  printf("    -d: DTW score threshold to report alignment (default: 0.001)\n");
   printf("    -x: Simulated molecule coverage\n");
   printf("  simulate options:\n");
   printf("    --break-rate: Probability of genome fragmentation per locus (default: 0.000005)\n");
@@ -105,7 +105,8 @@ int main(int argc, char *argv[]) {
   int q = 4; // q-gram size
   int h = 10; // number of hashes
   int verbose = 0;
-  int threshold = 0;
+  int chain_threshold = 1;
+  float dtw_threshold = 0.001;
   int seed = 0; // made this up
   int max_qgrams = 1000; // made this up
 
@@ -120,7 +121,7 @@ int main(int argc, char *argv[]) {
 
   int opt, long_idx;
   opterr = 0;
-  while ((opt = getopt_long(argc, argv, "b:c:q:hf:r:t:m:vx:a:s:", long_options, &long_idx)) != -1) {
+  while ((opt = getopt_long(argc, argv, "b:c:q:hf:r:t:m:vx:a:s:d:", long_options, &long_idx)) != -1) {
     switch (opt) {
       case 'b':
         bnx_file = optarg;
@@ -142,7 +143,10 @@ int main(int argc, char *argv[]) {
         restriction_seq = optarg;
         break;
       case 't':
-        threshold = atoi(optarg);
+        chain_threshold = atoi(optarg);
+        break;
+      case 'd':
+        dtw_threshold = atof(optarg);
         break;
       case 'v':
         verbose = 1;
@@ -299,7 +303,7 @@ int main(int argc, char *argv[]) {
     t1 = time(NULL);
     printf("# Loaded CMAP '%s': %d maps w/%d recognition sites in %.2f seconds\n", cmap_file, c.n_maps, c.n_rec_seqs, t1-t0);
 
-    int ret = hash_cmap(b, c, q, threshold, max_qgrams, 100, 1000);
+    int ret = hash_cmap(b, c, q, chain_threshold, dtw_threshold, max_qgrams, 100, 1000);
 
     // TODO: clean up cmap/bnx memory
   }

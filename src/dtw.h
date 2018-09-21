@@ -37,6 +37,7 @@ typedef struct aln_result {
   uint32_t tstart;
   uint32_t tend;
   uint8_t failed; // boolean flag
+  pathvec path;
 } result;
 
 static uint8_t MATCH = 0, INS = 1, DEL = 2;
@@ -53,6 +54,6 @@ static float score(uint32_t a, uint32_t b, uint32_t neutral_deviation) {
   return 1.0 - (diff / (float)neutral_deviation);
 }
 
-result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, pathvec *path, int8_t ins_score, int8_t del_score, uint32_t neutral_deviation);
+result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t ins_score, int8_t del_score, uint32_t neutral_deviation);
 
 #endif /* __DTW_H__ */
