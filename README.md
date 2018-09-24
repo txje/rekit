@@ -44,16 +44,12 @@ Usage
 
     Usage: rekit [command] [options]
     Commands:
-      overlap:  compute MinHash/pairwise Jaccard similarity
-      align:    compute dynamic time warping glocal (overlap) alignments
-      hash:     compute full q-gram intersection using a hash table
+      align:    align BNX molecules to reference CMAP
       simulate: simulate molecules
       digest:   in silico digestion
       label:    produce alignment-based reference CMAP
     Options:
-      overlap  -b
-      align    -b
-      hash     -b
+      align    -bc
       simulate -frx --break-rate --fn --fp --min-frag --stretch-mean --stretch-std --source-output
       digest   -fr
       label    -a
@@ -64,9 +60,9 @@ Usage
         -r: cutseq: Recognition/label site sequence
         -q: Size of q-gram/k-mer to hash (default: 4)
         -h: Number of hash functions to apply
-        -t: threshold: Minimum number of q-grams to declare a match
+        -t: Minimum number of q-gram/cross-ratio anchors in a chain (default: 1)
         -m: max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored
-        -d: threshold: Score threshold to report alignment
+        -d: DTW score threshold to report alignment (default: 0.001)
         -x: Simulated molecule coverage
       simulate options:
         --break-rate: Probability of genome fragmentation per locus (default: 0.000005)

@@ -43,16 +43,12 @@
 void usage() {
   printf("Usage: rekit [command] [options]\n");
   printf("Commands:\n");
-  printf("  overlap:  compute MinHash/pairwise Jaccard similarity\n");
-  printf("  align:    compute dynamic time warping glocal (overlap) alignments\n");
-  printf("  hash:     compute full q-gram intersection using a hash table\n");
+  printf("  align:    align BNX molecules to reference CMAP\n");
   printf("  simulate: simulate molecules\n");
   printf("  digest:   in silico digestion\n");
   printf("  label:    produce alignment-based reference CMAP\n");
   printf("Options:\n");
-  printf("  overlap  -b\n");
-  printf("  align    -b\n");
-  printf("  hash     -b\n");
+  printf("  align    -bc\n");
   printf("  simulate -frx --break-rate --fn --fp --min-frag --stretch-mean --stretch-std --source-output\n");
   printf("  digest   -fr\n");
   printf("  label    -a\n");
@@ -197,7 +193,7 @@ int main(int argc, char *argv[]) {
     }
   }
   if(command == NULL) {
-    fprintf(stderr, "Missing command (sim, dig, ovl, aln, hsh)\n");
+    usage();
     return 1;
   }
 
@@ -234,54 +230,7 @@ int main(int argc, char *argv[]) {
     ret = write_cmap(&c, stdout);
   }
 
-  if(strcmp(command, "overlap") == 0) {
-    printf("# Loading '%s'...\n", bnx_file);
-    time_t t0 = time(NULL);
-    c = read_bnx(bnx_file);
-
-    time_t t1 = time(NULL);
-    printf("# Loaded %d molecules in %d seconds\n", c.n_maps, (t1-t0));
-
-    // convert map of nicks to a simple array of byte vectors representing subfragment lengths
-    // discretize by 1kb if doing any hashing, do no dicretization if doing DTW
-    // -1 can be changed to a positive to number to limit the total number of fragments that are considered
-    //byteVec *frags = nicks_to_frags_bin(&map, 1000, -1, 1, 1, 1000);
-
-    //int ret = ovl_rmap(frags, n_frags, q, h, seed, threshold, max_qgrams, -1);
-
-    // free
-    /*
-    for(i = 0; i < n_frags; i++) {
-      kv_destroy(frags[i]);
-    }
-    free(frags);
-    */
-  }
-
   else if(strcmp(command, "align") == 0) {
-    if(argc < 4) {
-      printf("Not enough arguments for 'aln'.\n\n");
-      usage();
-      return 1;
-    }
-
-    // convert map of nicks to a simple array of byte vectors representing subfragment lengths
-    // discretize by 1kb if doing any hashing, do no dicretization if doing DTW
-    // -1 can be changed to a positive to number to limit the total number of fragments that are considered
-    /*
-    u32Vec *frags = nicks_to_frags(&map, -1, 1, 1, 1000);
-
-    int ret = dtw_rmap(frags, n_frags, threshold);
-
-    // free
-    for(i = 0; i < n_frags; i++) {
-      kv_destroy(frags[i]);
-    }
-    free(frags);
-    */
-  }
-
-  else if(strcmp(command, "hash") == 0) {
     if(bnx_file == NULL) {
       fprintf(stderr, "BNX file (-b) required\n");
       return 1;
