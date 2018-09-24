@@ -33,11 +33,8 @@
 #include "bnx.h"
 #include "hash.h"
 #include "dtw.h"
-#include "chain.c"
+#include "chain.h"
 #include "klib/ksort.h"
-
-#define pos_pair_lt(a,b) ((a).tpos < (b).tpos)
-KSORT_INIT(pos_pair_cmp, posPair, pos_pair_lt)
 
 #define aln_gt(a,b) ((a).score > (b).score)
 KSORT_INIT(aln_cmp, result, aln_gt)
@@ -86,6 +83,7 @@ int insert_rmap(label* labels, size_t n_labels, uint32_t read_id, int k, unsigne
   int absent;
   khint_t bin; // hash bin (result of kh_put)
   uint8_t* frags = get_fragments(labels, n_labels, bin_size);
+  if(n_labels < k) return 1;
   for(i = 0; i <= n_labels-k; i++) {
     //khint_t qgram = qgram_hash((frags+i), k); // khint_t is probably u32
     khint_t qgram = xratio_hash((labels+i), 100); // khint_t is probably u32
@@ -162,7 +160,7 @@ khash_t(matchHash)* lookup(label* labels, size_t n_labels, uint32_t read_id, int
 void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int max_qgrams, int chain_threshold, float dtw_threshold, int bin_size) {
   int i, j, l;
   uint32_t target;
-  int max_chains = 10; // this can be a parameter
+  int max_chains = 100; // this can be a parameter
   int max_alignments = 3; // this can be a parameter
   int match_score = 4; // ? idk what to do with this
   int max_gap = 10; // need to test/refine this
@@ -175,130 +173,122 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int 
     //printf("# Hashing fragment of size %d with %d nicks\n", b.ref_lengths[f], b.map_lengths[f]);
     khash_t(matchHash) *hits = lookup(b.labels[f], b.map_lengths[f], f, k, qrev, db, max_qgrams, bin_size); // forward strand only right now
 
-    // assess hits for each target
-    pairVec target_hits;
-    khint_t iter;
-    // from the definition of kh_foreach
-    for (iter = kh_begin(hits); iter != kh_end(hits); ++iter) {
-      if (!kh_exist(hits, iter)) continue;
-      target = kh_key(hits, iter);
-      target_hits = kh_val(hits, iter);
+    chain* chains = do_chain(hits, max_chains, match_score, max_gap, min_chain_length);
+    int n_chains = 0;
+    // count chains (if fewer than max_chains, the chains array is terminated by an empty chain vector)
+    for(i = 0; i < max_chains; i++) {
+      if(kv_size(chains[i].anchors) > 0)
+        n_chains = i+1;
+      else
+        break;
+    }
 
-      //sort anchor pairs by target pos increasing
-      ks_mergesort(pos_pair_cmp, kv_size(target_hits), target_hits.a, 0);
+    /*
+    printf("%d chains found with anchor sizes: ", n_chains);
+    for(i = 0; i < n_chains; i++) {
+      printf("%d, ", kv_size(chains[i].anchors));
+    }
+    printf("\n");
+    */
 
-      pairVec* chains = chain(&target_hits, max_chains, match_score, max_gap, min_chain_length);
-      int n_chains = 0;
-      // count chains (if fewer than max_chains, the chains array is terminated by an empty chain vector)
-      for(i = 0; i < max_chains; i++) {
-        if(kv_size(chains[i]) > 0)
-          n_chains = i+1;
-        else
+    int* starts = malloc(n_chains * sizeof(int));
+    int* ends = malloc(n_chains * sizeof(int));
+    uint32_t* refs = malloc(n_chains * sizeof(uint32_t));
+    l = 0; // count of non-overlapping chains
+    for(j = 0; j < n_chains; j++) {
+      if(kv_size(chains[j].anchors) < chain_threshold) continue;
+      target = chains[j].ref; // the target is encoded in the chained score struct, do_chain() should have enforced that all chained anchors are from the same target
+
+      // dynamic time warping
+      // extract ref labels - expand bounds to encompass unmatched labels within query range
+      int rst = kv_A(chains[j].anchors, 0).tpos;
+      // esimated start position on ref is (anchor[0]_ref_pos - anchor[0]_query_pos)
+      int est_rst = c.labels[target][rst].position - b.labels[f][kv_A(chains[j].anchors, 0).qpos].position;
+      while(rst > 0 && c.labels[target][rst].position > est_rst)
+        rst--;
+      int ren = kv_A(chains[j].anchors, kv_size(chains[j].anchors)-1).tpos;
+      // estimated end position on ref is (anchor[n]_ref_pos + (query_length - anchor[n]_query_pos))
+      int est_ren = c.labels[target][kv_A(chains[j].anchors, kv_size(chains[j].anchors)-1).tpos].position + (b.labels[f][b.map_lengths[f]-1].position - b.labels[f][kv_A(chains[j].anchors, kv_size(chains[j].anchors)-1).qpos].position);
+      while(ren < c.map_lengths[target]-1 && c.labels[target][ren].position < est_ren)
+        ren++;
+      //fprintf(stderr, "chain %d\n", j);
+      //fprintf(stderr, "est ref pos %d - %d\n", est_rst, est_ren);
+      //fprintf(stderr, "r indices %d - %d\n", rst, ren);
+
+      // loop through previous chain bounds and merge if they overlap
+      for(i = 0; i < l; i++) {
+        if(target == refs[i] && rst <= ends[i] && ren >= starts[i]) {
+          starts[i] = rst < starts[i] ? rst : starts[i];
+          ends[i] = ren > ends[i] ? ren : ends[i];
           break;
+        }
       }
+      // didn't overlap any
+      if(i == l) {
+        starts[i] = rst;
+        ends[i] = ren;
+        refs[i] = target;
+        l++;
+      }
+    }
+    n_chains = l;
+
+    result* alignments = malloc(n_chains * sizeof(result));
+    for(j = 0; j < n_chains; j++) {
+      // get fragment distances for DTW (no discretization)
+      uint32_t* qfrags = u32_get_fragments(b.labels[f], b.map_lengths[f], 1);
+      uint32_t* rfrags = u32_get_fragments(c.labels[refs[j]]+starts[j], ends[j]-starts[j]+1, 1);
+      //fprintf(stderr, "running dtw for read %d to ref %u %u-%u (of %u)\n", f, refs[j], starts[j], ends[j], c.map_lengths[refs[j]]);
+      result aln = dtw(qfrags, rfrags, b.map_lengths[f], ends[j]-starts[j]+1, -1, -1, 1000); // ins_score, del_score, neutral_deviation
+      aln.tstart += starts[j];
+      aln.tend += starts[j];
+      alignments[j] = aln;
+      free(qfrags);
+      free(rfrags);
+      if(aln.failed) {
+        fprintf(stderr, "q %d : ref %d DTW failed\n", f, refs[j]);
+        aln.score = -1; // to make sure it's sorted to the bottom
+        continue;
+      }
+    }
+    free(starts);
+    free(ends);
+
+    // sort alignments by (DTW) score decreasing
+    ks_mergesort(aln_cmp, n_chains, alignments, 0);
+
+    for(j = 0; j < (max_alignments < n_chains ? max_alignments : n_chains); j++) {
+      if(alignments[j].failed || alignments[j].score < dtw_threshold) continue;
+
+      // print chain output only
       /*
-      printf("hit target %d %d times\n", target, kv_size(target_hits));
-      printf("%d chains found with anchor sizes: ", n_chains);
-      for(i = 0; i < n_chains; i++) {
-        printf("%d, ", kv_size(chains[i]));
-      }
+      printf("%d,%d,%d,%d", f, qrev, target, kv_size(chains[j].anchors));
+      for(i = 0; i < kv_size(chains[j].anchors); i++)
+        printf(",%u(%u):%u(%u)", kv_A(chains[j].anchors, i).qpos, b.labels[f][kv_A(chains[j].anchors, i).qpos].position, kv_A(chains[j].anchors, i).tpos, c.labels[target][kv_A(chains[j].anchors, i).tpos].position);
       printf("\n");
       */
 
-      result* alignments = malloc(n_chains * sizeof(result));
-      int* starts = malloc(n_chains * sizeof(int));
-      int* ends = malloc(n_chains * sizeof(int));
-      l = 0; // count of non-overlapping chains
-      for(j = 0; j < n_chains; j++) {
-        if(kv_size(chains[j]) < chain_threshold) continue;
-
-        // dynamic time warping
-        // extract ref labels - expand bounds to encompass unmatched labels within query range
-        int rst = kv_A(chains[j], 0).tpos;
-        // esimated start position on ref is (anchor[0]_ref_pos - anchor[0]_query_pos)
-        int est_rst = c.labels[target][kv_A(chains[j], 0).tpos].position - b.labels[f][kv_A(chains[j], 0).qpos].position;
-        while(rst > 0 && c.labels[target][rst].position > est_rst)
-          rst--;
-        int ren = kv_A(chains[j], kv_size(chains[j])-1).tpos;
-        // estimated end position on ref is (anchor[n]_ref_pos + (query_length - anchor[n]_query_pos))
-        int est_ren = c.labels[target][kv_A(chains[j], kv_size(chains[j])-1).tpos].position + (b.labels[f][b.map_lengths[f]-1].position - b.labels[f][kv_A(chains[j], kv_size(chains[j])-1).qpos].position);
-        while(ren < c.map_lengths[target]-1 && c.labels[target][ren].position < est_ren)
-          ren++;
-        //fprintf(stderr, "est ref pos %u - %u\n", est_rst, est_ren);
-        //fprintf(stderr, "r indices %u - %u\n", rst, ren);
-
-        // loop through previous chain bounds and merge if they overlap
-        for(i = 0; i < l; i++) {
-          if(rst <= ends[i] && ren >= starts[i]) {
-            starts[i] = rst < starts[i] ? rst : starts[i];
-            ends[i] = ren > ends[i] ? ren : ends[i];
-            break;
-          }
-        }
-        // didn't overlap any
-        if(i == l) {
-          starts[i] = rst;
-          ends[i] = ren;
-          l++;
-        }
+      printf("%u\t", f); // query id
+      printf("%u\t", target); // target id
+      printf("%u\t", qrev); // query reverse?
+      printf("%u\t", alignments[j].qstart); // query start idx
+      printf("%u\t", alignments[j].qend); // query end idx
+      printf("%u\t", b.map_lengths[f]); // query len idx
+      printf("%u\t", b.labels[f][alignments[j].qstart].position); // query start
+      printf("%u\t", b.labels[f][alignments[j].qend-1].position); // query end
+      printf("%u\t", b.ref_lengths[f]); // query len
+      printf("%u\t", alignments[j].tstart); // ref start idx
+      printf("%u\t", alignments[j].tend); // ref end idx
+      printf("%u\t", c.map_lengths[target]); // ref len idx
+      printf("%u\t", c.labels[target][alignments[j].tstart].position); // ref start
+      printf("%u\t", c.labels[target][alignments[j].tend-1].position); // ref end
+      printf("%u\t", c.ref_lengths[target]); // ref len
+      printf("%f\t", alignments[j].score); // dtw score
+      // dtw path
+      for(i = 0; i < kv_size(alignments[j].path); i++) {
+        printf("%c", kv_A(alignments[j].path, i) == 0 ? '.' : (kv_A(alignments[j].path, i) == 1 ? 'I' : 'D'));
       }
-      n_chains = l;
-
-      for(j = 0; j < n_chains; j++) {
-        // get fragment distances for DTW (no discretization)
-        uint32_t* qfrags = u32_get_fragments(b.labels[f], b.map_lengths[f], 1);
-        uint32_t* rfrags = u32_get_fragments(c.labels[target]+starts[j], ends[j]-starts[j]+1, 1);
-        result aln = dtw(qfrags, rfrags, b.map_lengths[f], ends[j]-starts[j]+1, -1, -1, 1000); // ins_score, del_score, neutral_deviation
-        aln.tstart += starts[j];
-        aln.tend += starts[j];
-        alignments[j] = aln;
-        free(qfrags);
-        free(rfrags);
-        if(aln.failed) {
-          fprintf(stderr, "q %d : ref %d DTW failed\n", f, target);
-          aln.score = -1; // to make sure it's sorted to the bottom
-          continue;
-        }
-      }
-      free(starts);
-      free(ends);
-
-      // sort alignments by (DTW) score decreasing
-      ks_mergesort(aln_cmp, n_chains, alignments, 0);
-
-      for(j = 0; j < (max_alignments < n_chains ? max_alignments : n_chains); j++) {
-        if(alignments[j].failed || alignments[j].score < dtw_threshold) continue;
-
-        // print chain output only
-        /*
-        printf("%d,%d,%d,%d", f, qrev, target, kv_size(chains[j]));
-        for(i = 0; i < kv_size(chains[j]); i++)
-          printf(",%u(%u):%u(%u)", kv_A(chains[j], i).qpos, b.labels[f][kv_A(chains[j], i).qpos].position, kv_A(chains[j], i).tpos, c.labels[target][kv_A(chains[j], i).tpos].position);
-        printf("\n");
-        */
-
-        printf("%u\t", f); // query id
-        printf("%u\t", target); // target id
-        printf("%u\t", qrev); // query reverse?
-        printf("%u\t", alignments[j].qstart); // query start idx
-        printf("%u\t", alignments[j].qend); // query end idx
-        printf("%u\t", b.map_lengths[f]); // query len idx
-        printf("%u\t", b.labels[f][alignments[j].qstart].position); // query start
-        printf("%u\t", b.labels[f][alignments[j].qend-1].position); // query end
-        printf("%u\t", b.ref_lengths[f]); // query len
-        printf("%u\t", alignments[j].tstart); // ref start idx
-        printf("%u\t", alignments[j].tend); // ref end idx
-        printf("%u\t", c.map_lengths[target]); // ref len idx
-        printf("%u\t", c.labels[target][alignments[j].tstart].position); // ref start
-        printf("%u\t", c.labels[target][alignments[j].tend-1].position); // ref end
-        printf("%u\t", c.ref_lengths[target]); // ref len
-        printf("%f\t", alignments[j].score); // dtw score
-        // dtw path
-        for(i = 0; i < kv_size(alignments[j].path); i++) {
-          printf("%c", kv_A(alignments[j].path, i) == 0 ? '.' : (kv_A(alignments[j].path, i) == 1 ? 'I' : 'D'));
-        }
-        printf("\n");
-      }
+      printf("\n");
     }
 
     if(readLimit > 0 && f >= readLimit) {

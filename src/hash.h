@@ -22,12 +22,14 @@
  * SOFTWARE.
  */
 
-#ifndef __HASH_H__
-#define __HASH_H__
-
 #include <math.h>
 #include "klib/kvec.h" // C dynamic vector
 #include "klib/khash.h" // C hash table/dictionary
+#include "klib/ksort.h"
+#include "cmap.h"
+
+#ifndef __HASH_H__
+#define __HASH_H__
 
 // MAXIMUM # READS = 2^31 (~2bn)
 typedef struct {

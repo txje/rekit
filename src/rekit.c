@@ -108,7 +108,7 @@ int main(int argc, char *argv[]) {
   int chain_threshold = 1;
   float dtw_threshold = 0.001;
   int seed = 0; // made this up
-  int max_qgrams = 1000; // made this up
+  int max_qgrams = 2000000000; // made this up
 
   float coverage = 0.0;
   int covg_threshold = 10;

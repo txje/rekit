@@ -22,39 +22,27 @@
  * SOFTWARE.
  */
 
-#include "klib/kvec.h" // C dynamic vector
-#include "klib/ksort.h"
-#include "cmap.h"
+#include <stdint.h>
+#include "hash.h"
 
-#ifndef __DTW_H__
-#define __DTW_H__
+#ifndef __CHAIN_H__
+#define __CHAIN_H__
 
-typedef kvec_t(uint8_t) pathvec;
+typedef struct score_pos {
+  int score;
+  int pos;
+  uint32_t ref;
+  int prev;
+  uint8_t used;
+} score_pos;
 
-typedef struct aln_result {
-  float score;
-  uint32_t qstart;
-  uint32_t qend;
-  uint32_t tstart;
-  uint32_t tend;
-  uint8_t failed; // boolean flag
-  pathvec path;
-} result;
+typedef kvec_t(score_pos) scoreVec;
 
-static uint8_t MATCH = 0, INS = 1, DEL = 2;
+typedef struct chain {
+  pairVec anchors;
+  uint32_t ref;
+} chain;
 
-static float LOW = -1e38; // the order of the lowest possible 4-byte (single-precision) float
+chain* do_chain(khash_t(matchHash) *hits, int max_chains, int match_score, int max_gap, int min_chain_length);
 
-
-static float score(uint32_t a, uint32_t b, uint32_t neutral_deviation) {
-  float diff = (a > b ? (a - b) : (b - a));
-  // score is:
-  // 1 if fragments are the same size
-  // 0 if fragments differ by neutral deviation
-  // -1 if size difference is 2x neutral deviation
-  return 1.0 - (diff / (float)neutral_deviation);
-}
-
-result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t ins_score, int8_t del_score, uint32_t neutral_deviation);
-
-#endif /* __DTW_H__ */
+#endif /* __CHAIN_H__ */
