@@ -64,7 +64,6 @@ Usage
         -r: cutseq: Recognition/label site sequence
         -q: Size of q-gram/k-mer to hash (default: 4)
         -h: Number of hash functions to apply
-        -s: Seed to random number generator
         -t: threshold: Minimum number of q-grams to declare a match
         -m: max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored
         -d: threshold: Score threshold to report alignment
@@ -76,6 +75,29 @@ Usage
         --stretch-mean: Fragment stretch mean (default: 1.0)
         --stretch-std: Fragment stretch standard deviation (default: 0.05)
         --min-frag: Minimum detectable fragment size (default: 500)
-        --source-output: Output the reference positions of the simulated molecules to the given file
+        -s, --source-output: Output the reference positions of the simulated molecules to the given file
       label options:
         --coverage-threshold: Read coverage required (in ~300bp window) to call a label site (default: 10)
+
+Output
+------
+
+Tab-delimited text to stdout with the following fields:
+
+  1. Query (molecule) ID
+  2. Reference map ID
+  3. Reversed? (query)
+  4. Query labels start index
+  5. Query labels end index
+  6. Query labels length
+  7. Query label start position
+  8. Query label end position
+  9. Query total length
+  10. Ref labels start index
+  11. Ref labels end index
+  12. Ref labels length
+  13. Ref label start position
+  14. Ref label end position
+  15. Ref total length
+  16. DTW alignment score
+  17. DTW path string {'.', 'D', 'I'}

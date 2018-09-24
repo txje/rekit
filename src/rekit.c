@@ -63,7 +63,7 @@ void usage() {
   printf("    -r: cutseq: Recognition/label site sequence\n");
   printf("    -q: Size of q-gram/k-mer to hash (default: 4)\n");
   printf("    -h: Number of hash functions to apply\n");
-  printf("    -s: Seed to random number generator\n");
+  //printf("    -e: Seed to random number generator\n");
   printf("    -t: Minimum number of q-gram/cross-ratio anchors in a chain (default: 1)\n");
   printf("    -m: max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored\n");
   printf("    -d: DTW score threshold to report alignment (default: 0.001)\n");
@@ -75,7 +75,7 @@ void usage() {
   printf("    --stretch-mean: Fragment stretch mean (default: 1.0)\n");
   printf("    --stretch-std: Fragment stretch standard deviation (default: 0.05)\n");
   printf("    --min-frag: Minimum detectable fragment size (default: 500)\n");
-  printf("    --source-output: Output the reference positions of the simulated molecules to the given file\n");
+  printf("    -s, --source-output: Output the reference positions of the simulated molecules to the given file\n");
   printf("  label options:\n");
   printf("    --coverage-threshold: Read coverage required (in ~300bp window) to call a label site (default: 10)\n");
 }
