@@ -195,6 +195,7 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int 
     int* ends = malloc(n_chains * sizeof(int));
     uint32_t* refs = malloc(n_chains * sizeof(uint32_t));
     l = 0; // count of non-overlapping chains
+    int last; // index of the last range that was merged
     for(j = 0; j < n_chains; j++) {
       if(kv_size(chains[j].anchors) < chain_threshold) continue;
       target = chains[j].ref; // the target is encoded in the chained score struct, do_chain() should have enforced that all chained anchors are from the same target
@@ -216,25 +217,35 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int 
       //fprintf(stderr, "r indices %d - %d\n", rst, ren);
 
       // loop through previous chain bounds and merge if they overlap
+      last = -1;
       for(i = 0; i < l; i++) {
-        if(target == refs[i] && rst <= ends[i] && ren >= starts[i]) {
-          starts[i] = rst < starts[i] ? rst : starts[i];
-          ends[i] = ren > ends[i] ? ren : ends[i];
-          break;
+        if(target == refs[i] && ((last > -1 && starts[last] <= ends[i] && ends[last] >= starts[i]) || (last == -1 && rst <= ends[i] && ren >= starts[i]))) {
+          if(last > -1) {
+            refs[last] = -1; // unset this one since it was merged down
+            starts[i] = starts[last] < starts[i] ? starts[last] : starts[i];
+            ends[i] = ends[last] > ends[i] ? ends[last] : ends[i];
+          } else {
+            starts[i] = rst < starts[i] ? rst : starts[i];
+            ends[i] = ren > ends[i] ? ren : ends[i];
+          }
+          // we can't stop here, we have to keep merging down
+          last = i;
         }
       }
       // didn't overlap any
-      if(i == l) {
+      if(last == -1) {
         starts[i] = rst;
         ends[i] = ren;
         refs[i] = target;
         l++;
       }
     }
-    n_chains = l;
+    n_chains = l; // includes those that were merged overlaps (ref == -1)
 
     result* alignments = malloc(n_chains * sizeof(result));
+    l = 0;
     for(j = 0; j < n_chains; j++) {
+      if(refs[j] == -1) continue; // merged down
       // get fragment distances for DTW (no discretization)
       uint32_t* qfrags = u32_get_fragments(b.labels[f], b.map_lengths[f], 1);
       uint32_t* rfrags = u32_get_fragments(c.labels[refs[j]]+starts[j], ends[j]-starts[j]+1, 1);
@@ -242,7 +253,7 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int 
       result aln = dtw(qfrags, rfrags, b.map_lengths[f], ends[j]-starts[j]+1, -1, -1, 1000); // ins_score, del_score, neutral_deviation
       aln.tstart += starts[j];
       aln.tend += starts[j];
-      alignments[j] = aln;
+      alignments[l++] = aln;
       free(qfrags);
       free(rfrags);
       if(aln.failed) {
@@ -251,6 +262,7 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int 
         continue;
       }
     }
+    n_chains = l; // this is a true count now
     free(starts);
     free(ends);
 
