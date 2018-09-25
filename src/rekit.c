@@ -87,6 +87,7 @@ static struct option long_options[] = {
   { "coverage-threshold",     required_argument, 0, 0 },
   { "help",                   no_argument,       0, 0 },
   { "source-output",          required_argument, 0, 0 },
+  { "bin-size",               required_argument, 0, 0 },
   { 0, 0, 0, 0}
 };
 
@@ -105,6 +106,8 @@ int main(int argc, char *argv[]) {
   float dtw_threshold = 0.001;
   int seed = 0; // made this up
   int max_qgrams = 2000000000; // made this up
+  int bin_size = 100; // # bins that x-ratios will be spread across, or divisor for fragment size binning
+  int read_limit = 100; // just for testing
 
   float coverage = 0.0;
   int covg_threshold = 10;
@@ -175,6 +178,7 @@ int main(int argc, char *argv[]) {
         else if (long_idx == 6) covg_threshold = atoi(optarg); // --coverage-threshold
         else if (long_idx == 7) {usage(); return 0;} // --help
         else if (long_idx == 8) source_outfile = optarg; // --source-output
+        else if (long_idx == 9) bin_size = atoi(optarg); // --bin-size
         break;
       default:
         usage();
@@ -239,6 +243,7 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "CMAP file (-c) required\n");
       return 1;
     }
+    FILE* o = stdout;
 
     printf("# Loading '%s'...\n", bnx_file);
     time_t t0 = time(NULL);
@@ -252,7 +257,7 @@ int main(int argc, char *argv[]) {
     t1 = time(NULL);
     printf("# Loaded CMAP '%s': %d maps w/%d recognition sites in %.2f seconds\n", cmap_file, c.n_maps, c.n_rec_seqs, t1-t0);
 
-    int ret = hash_cmap(b, c, q, chain_threshold, dtw_threshold, max_qgrams, 100, 1000);
+    int ret = hash_cmap(b, c, o, q, chain_threshold, dtw_threshold, max_qgrams, read_limit, bin_size);
 
     // TODO: clean up cmap/bnx memory
   }

@@ -154,14 +154,15 @@ void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float f
       }
       // apply normally distributed size variation
       uint32_t f = last_stretched + (val - last) * normal(stretch_mean, stretch_std);
-      last = val;
-      last_stretched = f;
 
       // then include only fragments that exceed some minimum size (typically, ~1kb for Bionano)
       // and fall above FN rate
-      if(f >= resolution_min && ((double)rand() / (double)RAND_MAX) > fn_rate) {
+      if(f - last_stretched >= resolution_min && ((double)rand() / (double)RAND_MAX) > fn_rate) {
         kv_push(uint32_t, *modpos, f);
       }
+
+      last = val;
+      last_stretched = f;
     }
 
     kv_push(u32Vec*, *frags, modpos);

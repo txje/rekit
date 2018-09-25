@@ -86,7 +86,7 @@ int insert_rmap(label* labels, size_t n_labels, uint32_t read_id, int k, unsigne
   if(n_labels < k) return 1;
   for(i = 0; i <= n_labels-k; i++) {
     //khint_t qgram = qgram_hash((frags+i), k); // khint_t is probably u32
-    khint_t qgram = xratio_hash((labels+i), 100); // khint_t is probably u32
+    khint_t qgram = xratio_hash((labels+i), bin_size); // khint_t is probably u32
     //printf("# %dth %d-gram: %u\n", i, k, qgram);
 
     // insert qgram:readId,i into db
@@ -132,32 +132,36 @@ khash_t(matchHash)* lookup(label* labels, size_t n_labels, uint32_t read_id, int
   if(n_labels < k) return hits;
   for(i = 0; i <= n_labels-k; i++) {
     //khint_t qgram = qgram_hash((frags+i), k); // khint_t is probably u32
-    khint_t qgram = xratio_hash((labels+i), 100); // khint_t is probably u32
-    //printf("# %dth %d-gram: %u\n", i, k, qgram);
+    khint_t qgram = xratio_hash((labels+i), bin_size); // khint_t is probably u32
+    //fprintf(stderr, "# %dth %d-gram: %u\n", i, k, qgram);
 
-    bin = kh_get(qgramHash, db, qgram);
-    if(bin == kh_end(db)) // key not found, IDK what happens if you don't test this
-      continue;
-    matchVec matches = kh_val(db, bin);
-    if(kv_size(matches) > max_qgrams) { // repetitive, ignore it
-      continue;
-    }
-    for(m = 0; m < kv_size(matches); m++) {
-      bin = kh_put(matchHash, hits, kv_A(matches, m).readNum>>1, &absent); // >>1 removes the fw/rv bit, which is always fw(0) right now
-      if(absent) { // bin is empty (unset)
-        kv_init(kh_value(hits, bin));
+    khint_t close;
+    for(close = qgram > 0 ? qgram-1 : 0; close < qgram+2; close++) {
+      //fprintf(stderr, "adding hash val %u\n", close);
+      bin = kh_get(qgramHash, db, close);
+      if(bin == kh_end(db)) // key not found, IDK what happens if you don't test this
+        continue;
+      matchVec matches = kh_val(db, bin);
+      if(kv_size(matches) > max_qgrams) { // repetitive, ignore it
+        continue;
       }
-      posPair ppair; // to store matching query/target positions
-      ppair.qpos = i;
-      ppair.tpos = kv_A(matches, m).pos;
-      kv_push(posPair, kh_value(hits, bin), ppair);
+      for(m = 0; m < kv_size(matches); m++) {
+        bin = kh_put(matchHash, hits, kv_A(matches, m).readNum>>1, &absent); // >>1 removes the fw/rv bit, which is always fw(0) right now
+        if(absent) { // bin is empty (unset)
+          kv_init(kh_value(hits, bin));
+        }
+        posPair ppair; // to store matching query/target positions
+        ppair.qpos = i;
+        ppair.tpos = kv_A(matches, m).pos;
+        kv_push(posPair, kh_value(hits, bin), ppair);
+      }
     }
   }
 
   return hits;
 }
 
-void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int max_qgrams, int chain_threshold, float dtw_threshold, int bin_size) {
+void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, FILE* o, int readLimit, int max_qgrams, int chain_threshold, float dtw_threshold, int bin_size) {
   int i, j, l;
   uint32_t target;
   int max_chains = 100; // this can be a parameter
@@ -212,9 +216,11 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int 
       int est_ren = c.labels[target][kv_A(chains[j].anchors, kv_size(chains[j].anchors)-1).tpos].position + (b.labels[f][b.map_lengths[f]-1].position - b.labels[f][kv_A(chains[j].anchors, kv_size(chains[j].anchors)-1).qpos].position);
       while(ren < c.map_lengths[target]-1 && c.labels[target][ren].position < est_ren)
         ren++;
-      //fprintf(stderr, "chain %d\n", j);
-      //fprintf(stderr, "est ref pos %d - %d\n", est_rst, est_ren);
-      //fprintf(stderr, "r indices %d - %d\n", rst, ren);
+      /*
+      fprintf(stderr, "chain %d\n", j);
+      fprintf(stderr, "est ref pos %d - %d\n", est_rst, est_ren);
+      fprintf(stderr, "r indices %d - %d\n", rst, ren);
+      */
 
       // loop through previous chain bounds and merge if they overlap
       last = -1;
@@ -230,6 +236,7 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int 
           }
           // we can't stop here, we have to keep merging down
           last = i;
+          //fprintf(stderr, "overlaps %d: %d-%d\n", refs[i], starts[i], ends[i]);
         }
       }
       // didn't overlap any
@@ -238,11 +245,13 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int 
         ends[i] = ren;
         refs[i] = target;
         l++;
+        //fprintf(stderr, "new %d: %d-%d\n", refs[i], starts[i], ends[i]);
       }
     }
     n_chains = l; // includes those that were merged overlaps (ref == -1)
 
     result* alignments = malloc(n_chains * sizeof(result));
+    uint32_t* aln_refs = malloc(n_chains * sizeof(uint32_t));
     l = 0;
     for(j = 0; j < n_chains; j++) {
       if(refs[j] == -1) continue; // merged down
@@ -253,6 +262,7 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int 
       result aln = dtw(qfrags, rfrags, b.map_lengths[f], ends[j]-starts[j]+1, -1, -1, 1000); // ins_score, del_score, neutral_deviation
       aln.tstart += starts[j];
       aln.tend += starts[j];
+      aln_refs[l] = refs[j];
       alignments[l++] = aln;
       free(qfrags);
       free(rfrags);
@@ -280,27 +290,27 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int 
       printf("\n");
       */
 
-      printf("%u\t", f); // query id
-      printf("%u\t", target); // target id
-      printf("%u\t", qrev); // query reverse?
-      printf("%u\t", alignments[j].qstart); // query start idx
-      printf("%u\t", alignments[j].qend); // query end idx
-      printf("%u\t", b.map_lengths[f]); // query len idx
-      printf("%u\t", b.labels[f][alignments[j].qstart].position); // query start
-      printf("%u\t", b.labels[f][alignments[j].qend-1].position); // query end
-      printf("%u\t", b.ref_lengths[f]); // query len
-      printf("%u\t", alignments[j].tstart); // ref start idx
-      printf("%u\t", alignments[j].tend); // ref end idx
-      printf("%u\t", c.map_lengths[target]); // ref len idx
-      printf("%u\t", c.labels[target][alignments[j].tstart].position); // ref start
-      printf("%u\t", c.labels[target][alignments[j].tend-1].position); // ref end
-      printf("%u\t", c.ref_lengths[target]); // ref len
-      printf("%f\t", alignments[j].score); // dtw score
+      fprintf(o, "%u\t", f); // query id
+      fprintf(o, "%u\t", aln_refs[j]); // target id
+      fprintf(o, "%u\t", qrev); // query reverse?
+      fprintf(o, "%u\t", alignments[j].qstart); // query start idx
+      fprintf(o, "%u\t", alignments[j].qend); // query end idx
+      fprintf(o, "%u\t", b.map_lengths[f]); // query len idx
+      fprintf(o, "%u\t", b.labels[f][alignments[j].qstart].position); // query start
+      fprintf(o, "%u\t", b.labels[f][alignments[j].qend-1].position); // query end
+      fprintf(o, "%u\t", b.ref_lengths[f]); // query len
+      fprintf(o, "%u\t", alignments[j].tstart); // ref start idx
+      fprintf(o, "%u\t", alignments[j].tend); // ref end idx
+      fprintf(o, "%u\t", c.map_lengths[aln_refs[j]]); // ref len idx
+      fprintf(o, "%u\t", c.labels[aln_refs[j]][alignments[j].tstart].position); // ref start
+      fprintf(o, "%u\t", c.labels[aln_refs[j]][alignments[j].tend-1].position); // ref end
+      fprintf(o, "%u\t", c.ref_lengths[aln_refs[j]]); // ref len
+      fprintf(o, "%f\t", alignments[j].score); // dtw score
       // dtw path
       for(i = 0; i < kv_size(alignments[j].path); i++) {
-        printf("%c", kv_A(alignments[j].path, i) == 0 ? '.' : (kv_A(alignments[j].path, i) == 1 ? 'I' : 'D'));
+        fprintf(o, "%c", kv_A(alignments[j].path, i) == 0 ? '.' : (kv_A(alignments[j].path, i) == 1 ? 'I' : 'D'));
       }
-      printf("\n");
+      fprintf(o, "\n");
     }
 
     if(readLimit > 0 && f >= readLimit) {
@@ -315,7 +325,7 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, int readLimit, int 
 /*
  * readLimit: maximum reads to process for BOTH database and query
  */
-int hash_cmap(cmap b, cmap c, int q, int chain_threshold, float dtw_threshold, int max_qgrams, int readLimit, int bin_size) {
+int hash_cmap(cmap b, cmap c, FILE* o, int q, int chain_threshold, float dtw_threshold, int max_qgrams, int readLimit, int bin_size) {
 
   // ------------------------- Create hash database -----------------------------
 
@@ -335,7 +345,7 @@ int hash_cmap(cmap b, cmap c, int q, int chain_threshold, float dtw_threshold, i
 
   // ---------------------------- Look up queries in db ------------------------------
   printf("# Querying %d bnx fragments\n", b.n_maps);
-  query_db(b, q, db, c, readLimit, max_qgrams, chain_threshold, dtw_threshold, bin_size);
+  query_db(b, q, db, c, o, readLimit, max_qgrams, chain_threshold, dtw_threshold, bin_size);
 
   t1 = time(NULL);
   printf("# Queried and output in %d seconds\n", (t1-t0));

@@ -72,6 +72,6 @@ static kh_inline khint_t qgram_hash(uint8_t *s, int k) {
   return h;
 }
 
-int hash_cmap(cmap b, cmap c, int q, int chain_threshold, float dtw_threshold, int max_qgrams, int readLimit, int bin_size);
+int hash_cmap(cmap b, cmap c, FILE* o, int q, int chain_threshold, float dtw_threshold, int max_qgrams, int readLimit, int bin_size);
 
 #endif /* __HASH_H__ */
