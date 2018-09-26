@@ -62,4 +62,6 @@ cmap read_cmap(const char* fn);
 int add_map(cmap* c, uint32_t* positions, size_t n_pos, uint8_t channel);
 void init_cmap(cmap* c);
 
+size_t filter_labels(label* labels, size_t n_labels, label* filtered_labels, int resolution_min);
+
 #endif

@@ -105,12 +105,17 @@ int insert_rmap(label* labels, size_t n_labels, uint32_t read_id, int k, unsigne
 
 // if reverse is true (1), forward and reverse signatures will be adjacent such that
 // signature of read X forward is at index (2*X), and reverse is (2*X + 1)
-void build_hash_db(cmap c, int k, khash_t(qgramHash) *db, int readLimit, int bin_size) {
+void build_hash_db(cmap c, int k, khash_t(qgramHash) *db, int readLimit, int bin_size, int resolution_min) {
 
+  label* filtered_labels;
   uint32_t f = 0;
   while (f < c.n_maps) {
 
-    int res = insert_rmap(c.labels[f], c.map_lengths[f], f, k, 0, db, bin_size); // forward strand only right now
+    filtered_labels = malloc(c.map_lengths[f] * sizeof(label));
+    int n_filtered_labels = filter_labels(c.labels[f], c.map_lengths[f], filtered_labels, resolution_min);
+    //int res = insert_rmap(c.labels[f], c.map_lengths[f], f, k, 0, db, bin_size); // forward strand only right now
+    int res = insert_rmap(filtered_labels, n_filtered_labels, f, k, 0, db, bin_size); // forward strand only right now
+    free(filtered_labels);
     f++;
 
     if(readLimit > 0 && f >= readLimit) {
@@ -171,11 +176,17 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, FILE* o, int readLi
   int min_chain_length = 3; // need to test/refine this
 
   uint32_t f = 0;
+  //label* filtered_labels;
   while (f < b.n_maps) {
     unsigned char qrev = 0; // TODO: forward strand only right now - the database is also currently only fw, eventually we should query both
 
+    // ------ we do this kind of filtering in the simulation now ------
+    //filtered_labels = malloc(b.map_lengths[f] * sizeof(label));
+    //int n_filtered_labels = filter_labels(b.labels[f], b.map_lengths[f], filtered_labels, 500);
     //printf("# Hashing fragment of size %d with %d nicks\n", b.ref_lengths[f], b.map_lengths[f]);
     khash_t(matchHash) *hits = lookup(b.labels[f], b.map_lengths[f], f, k, qrev, db, max_qgrams, bin_size); // forward strand only right now
+    //khash_t(matchHash) *hits = lookup(filtered_labels, n_filtered_labels, f, k, qrev, db, max_qgrams, bin_size); // forward strand only right now
+    //free(filtered_labels);
 
     chain* chains = do_chain(hits, max_chains, match_score, max_gap, min_chain_length);
     int n_chains = 0;
@@ -325,7 +336,7 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, FILE* o, int readLi
 /*
  * readLimit: maximum reads to process for BOTH database and query
  */
-int hash_cmap(cmap b, cmap c, FILE* o, int q, int chain_threshold, float dtw_threshold, int max_qgrams, int readLimit, int bin_size) {
+int hash_cmap(cmap b, cmap c, FILE* o, int q, int chain_threshold, float dtw_threshold, int max_qgrams, int readLimit, int bin_size, int resolution_min) {
 
   // ------------------------- Create hash database -----------------------------
 
@@ -336,7 +347,7 @@ int hash_cmap(cmap b, cmap c, FILE* o, int q, int chain_threshold, float dtw_thr
   khash_t(qgramHash) *db = kh_init(qgramHash);
 
   printf("# Hashing %d cmap fragments\n", c.n_maps);
-  build_hash_db(c, q, db, readLimit, bin_size);
+  build_hash_db(c, q, db, readLimit, bin_size, resolution_min);
 
   time_t t1 = time(NULL);
   printf("# Hashed rmaps in %d seconds\n", (t1-t0));

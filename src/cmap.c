@@ -236,3 +236,20 @@ int add_map(cmap* c, uint32_t* positions, size_t n_pos, uint8_t channel) {
   }
   return 0;
 }
+
+// filters labels based on minimum resolution (default: 500)
+// filtered_labels should already have been alloc'd
+size_t filter_labels(label* labels, size_t n_labels, label* filtered_labels, int resolution_min) {
+  int i;
+  size_t j = 0;
+  for(i = 0; i < n_labels; i++) {
+    if(1) { //j == 0 || labels[i].position - filtered_labels[j-1].position >= resolution_min) {
+      filtered_labels[j++] = labels[i];
+    } else {
+      // sets the position of adjacent labels < min apart as the midpoint between them
+      // DOES NOT account for other label features (incl. channel) - these are not used right now but they may be in the future
+      filtered_labels[j-1].position = filtered_labels[j-1].position + (labels[i].position - filtered_labels[j-1].position) / 2;
+    }
+  }
+  return j;
+}

@@ -257,7 +257,7 @@ int main(int argc, char *argv[]) {
     t1 = time(NULL);
     printf("# Loaded CMAP '%s': %d maps w/%d recognition sites in %.2f seconds\n", cmap_file, c.n_maps, c.n_rec_seqs, t1-t0);
 
-    int ret = hash_cmap(b, c, o, q, chain_threshold, dtw_threshold, max_qgrams, read_limit, bin_size);
+    int ret = hash_cmap(b, c, o, q, chain_threshold, dtw_threshold, max_qgrams, read_limit, bin_size, min_frag);
 
     // TODO: clean up cmap/bnx memory
   }

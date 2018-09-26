@@ -127,7 +127,7 @@ void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float f
     u32Vec positions;
     kv_init(positions);
     int res = digest(seq->s, seq->l, motifs, n_motifs, 1, 0, nlimit, &positions);
-    //printf("molecule %d of %d (%d bp) has %d labels\n", i, kv_size(seqs), seq->l, kv_size(positions));
+    //fprintf(stderr, "molecule %d of %d (%d bp) has %d labels\n", i, kv_size(seqs), seq->l, kv_size(positions));
 
     int fp = round(kv_size(positions) * normal(fp_rate, 0.01));
     u32Vec fp_pos;
@@ -157,8 +157,12 @@ void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float f
 
       // then include only fragments that exceed some minimum size (typically, ~1kb for Bionano)
       // and fall above FN rate
-      if(f - last_stretched >= resolution_min && ((double)rand() / (double)RAND_MAX) > fn_rate) {
-        kv_push(uint32_t, *modpos, f);
+      if(((double)rand() / (double)RAND_MAX) > fn_rate) {
+        if(kv_size(*modpos) == 0 || f - last_stretched >= resolution_min) {
+          kv_push(uint32_t, *modpos, f);
+        } else { // if this label is too close to the last, use only the midpoint of the two
+          kv_A(*modpos, kv_size(*modpos)-1) = last_stretched + (f - last_stretched) / 2;
+        }
       }
 
       last = val;
