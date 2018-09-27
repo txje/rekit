@@ -33,6 +33,7 @@ typedef kvec_t(uint8_t) pathvec;
 
 typedef struct aln_result {
   float score;
+  uint32_t ref;
   uint32_t qstart;
   uint32_t qend;
   uint32_t tstart;

@@ -262,7 +262,6 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, FILE* o, int readLi
     n_chains = l; // includes those that were merged overlaps (ref == -1)
 
     result* alignments = malloc(n_chains * sizeof(result));
-    uint32_t* aln_refs = malloc(n_chains * sizeof(uint32_t));
     l = 0;
     for(j = 0; j < n_chains; j++) {
       if(refs[j] == -1) continue; // merged down
@@ -273,12 +272,12 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, FILE* o, int readLi
       result aln = dtw(qfrags, rfrags, b.map_lengths[f], ends[j]-starts[j]+1, -1, -1, 1000); // ins_score, del_score, neutral_deviation
       aln.tstart += starts[j];
       aln.tend += starts[j];
-      aln_refs[l] = refs[j];
+      aln.ref = refs[j];
       alignments[l++] = aln;
       free(qfrags);
       free(rfrags);
       if(aln.failed) {
-        fprintf(stderr, "q %d : ref %d DTW failed\n", f, refs[j]);
+        //fprintf(stderr, "q %d : ref %d DTW failed -- this should never happen\n", f, refs[j]);
         aln.score = -1; // to make sure it's sorted to the bottom
         continue;
       }
@@ -302,7 +301,7 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, FILE* o, int readLi
       */
 
       fprintf(o, "%u\t", f); // query id
-      fprintf(o, "%u\t", aln_refs[j]); // target id
+      fprintf(o, "%u\t", alignments[j].ref); // target id
       fprintf(o, "%u\t", qrev); // query reverse?
       fprintf(o, "%u\t", alignments[j].qstart); // query start idx
       fprintf(o, "%u\t", alignments[j].qend); // query end idx
@@ -312,10 +311,10 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, FILE* o, int readLi
       fprintf(o, "%u\t", b.ref_lengths[f]); // query len
       fprintf(o, "%u\t", alignments[j].tstart); // ref start idx
       fprintf(o, "%u\t", alignments[j].tend); // ref end idx
-      fprintf(o, "%u\t", c.map_lengths[aln_refs[j]]); // ref len idx
-      fprintf(o, "%u\t", c.labels[aln_refs[j]][alignments[j].tstart].position); // ref start
-      fprintf(o, "%u\t", c.labels[aln_refs[j]][alignments[j].tend-1].position); // ref end
-      fprintf(o, "%u\t", c.ref_lengths[aln_refs[j]]); // ref len
+      fprintf(o, "%u\t", c.map_lengths[alignments[j].ref]); // ref len idx
+      fprintf(o, "%u\t", c.labels[alignments[j].ref][alignments[j].tstart].position); // ref start
+      fprintf(o, "%u\t", c.labels[alignments[j].ref][alignments[j].tend-1].position); // ref end
+      fprintf(o, "%u\t", c.ref_lengths[alignments[j].ref]); // ref len
       fprintf(o, "%f\t", alignments[j].score); // dtw score
       // dtw path
       for(i = 0; i < kv_size(alignments[j].path); i++) {
