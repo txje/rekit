@@ -85,19 +85,23 @@ int insert_rmap(label* labels, size_t n_labels, uint32_t read_id, int k, unsigne
   uint8_t* frags = get_fragments(labels, n_labels, bin_size);
   if(n_labels < k) return 1;
   for(i = 0; i <= n_labels-k; i++) {
-    //khint_t qgram = qgram_hash((frags+i), k); // khint_t is probably u32
-    khint_t qgram = xratio_hash((labels+i), bin_size); // khint_t is probably u32
-    //printf("# %dth %d-gram: %u\n", i, k, qgram);
+    khint_t qgram; // khint_t is probably u32
+    //qgram = qgram_hash((frags+i), k);
+    int skip;
+    for(skip = 1; skip <= 4; skip++) {
+      qgram = xratio_hash((labels+i), bin_size, skip);
+      //printf("# %dth %d-gram: %u\n", i, k, qgram);
 
-    // insert qgram:readId,i into db
-    bin = kh_put(qgramHash, db, qgram, &absent);
-    if(absent) { // bin is empty (unset)
-      kv_init(kh_value(db, bin));
+      // insert qgram:readId,i into db
+      bin = kh_put(qgramHash, db, qgram, &absent);
+      if(absent) { // bin is empty (unset)
+        kv_init(kh_value(db, bin));
+      }
+      readPos r;
+      r.readNum = (read_id << 1); // forward strand since its padded with a 0
+      r.pos = i;
+      kv_push(readPos, kh_value(db, bin), r);
     }
-    readPos r;
-    r.readNum = (read_id << 1); // forward strand since its padded with a 0
-    r.pos = i;
-    kv_push(readPos, kh_value(db, bin), r);
   }
 
   return 0;
@@ -136,29 +140,35 @@ khash_t(matchHash)* lookup(label* labels, size_t n_labels, uint32_t read_id, int
   uint8_t* frags = get_fragments(labels, n_labels, bin_size);
   if(n_labels < k) return hits;
   for(i = 0; i <= n_labels-k; i++) {
-    //khint_t qgram = qgram_hash((frags+i), k); // khint_t is probably u32
-    khint_t qgram = xratio_hash((labels+i), bin_size); // khint_t is probably u32
-    //fprintf(stderr, "# %dth %d-gram: %u\n", i, k, qgram);
+    khint_t qgram; // khint_t is probably u32
+    //qgram = qgram_hash((frags+i), k);
+    int skip;
+    for(skip = 1; skip <= 4; skip++) {
+      qgram = xratio_hash((labels+i), bin_size, skip);
+      //fprintf(stderr, "# %dth %d-gram: %u\n", i, k, qgram);
 
-    khint_t close;
-    for(close = qgram > 0 ? qgram-1 : 0; close < qgram+2; close++) {
-      //fprintf(stderr, "adding hash val %u\n", close);
-      bin = kh_get(qgramHash, db, close);
-      if(bin == kh_end(db)) // key not found, IDK what happens if you don't test this
-        continue;
-      matchVec matches = kh_val(db, bin);
-      if(kv_size(matches) > max_qgrams) { // repetitive, ignore it
-        continue;
-      }
-      for(m = 0; m < kv_size(matches); m++) {
-        bin = kh_put(matchHash, hits, kv_A(matches, m).readNum>>1, &absent); // >>1 removes the fw/rv bit, which is always fw(0) right now
-        if(absent) { // bin is empty (unset)
-          kv_init(kh_value(hits, bin));
+      khint_t size_close, close;
+      for(size_close = qgram > bin_size ? qgram-bin_size : qgram; size_close < qgram + bin_size + 1; size_close += bin_size) {
+        for(close = size_close > 0 ? size_close-1 : 0; close < size_close+2; close++) {
+          //fprintf(stderr, "adding hash val %u\n", close);
+          bin = kh_get(qgramHash, db, close);
+          if(bin == kh_end(db)) // key not found, IDK what happens if you don't test this
+            continue;
+          matchVec matches = kh_val(db, bin);
+          if(kv_size(matches) > max_qgrams) { // repetitive, ignore it
+            continue;
+          }
+          for(m = 0; m < kv_size(matches); m++) {
+            bin = kh_put(matchHash, hits, kv_A(matches, m).readNum>>1, &absent); // >>1 removes the fw/rv bit, which is always fw(0) right now
+            if(absent) { // bin is empty (unset)
+              kv_init(kh_value(hits, bin));
+            }
+            posPair ppair; // to store matching query/target positions
+            ppair.qpos = i;
+            ppair.tpos = kv_A(matches, m).pos;
+            kv_push(posPair, kh_value(hits, bin), ppair);
+          }
         }
-        posPair ppair; // to store matching query/target positions
-        ppair.qpos = i;
-        ppair.tpos = kv_A(matches, m).pos;
-        kv_push(posPair, kh_value(hits, bin), ppair);
       }
     }
   }

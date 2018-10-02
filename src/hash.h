@@ -53,14 +53,22 @@ KHASH_MAP_INIT_INT(qgramHash, matchVec);
 // creates uint32(target read id):kvec<qpos,tpos> hash
 KHASH_MAP_INIT_INT(matchHash, pairVec);
 
-static kh_inline khint_t xratio_hash(label* labels, int bins) {
+static kh_inline khint_t xratio_hash(label* labels, int bins, int skip) {
   //fprintf(stderr, "%d %d %d %d\n", labels[0].position, labels[1].position, labels[2].position, labels[3].position);
-  float cr = (((float)labels[2].position - labels[0].position) * ((float)labels[3].position - labels[1].position)) / (((float)labels[2].position - labels[1].position) * ((float)labels[3].position - labels[0].position)); // cross-ratio
+  float cr;
+  if(skip == 1)
+    cr = (((float)labels[3].position - labels[0].position) * ((float)labels[4].position - labels[2].position)) / (((float)labels[3].position - labels[2].position) * ((float)labels[4].position - labels[0].position)); // cross-ratio
+  else if(skip == 2)
+    cr = (((float)labels[3].position - labels[0].position) * ((float)labels[4].position - labels[1].position)) / (((float)labels[3].position - labels[1].position) * ((float)labels[4].position - labels[0].position)); // cross-ratio
+  else if(skip == 3)
+    cr = (((float)labels[2].position - labels[0].position) * ((float)labels[4].position - labels[1].position)) / (((float)labels[2].position - labels[1].position) * ((float)labels[4].position - labels[0].position)); // cross-ratio
+  else if(skip == 4)
+    cr = (((float)labels[2].position - labels[0].position) * ((float)labels[3].position - labels[1].position)) / (((float)labels[2].position - labels[1].position) * ((float)labels[3].position - labels[0].position)); // cross-ratio
   //fprintf(stderr, "x-ratio: %f\n", cr);
   // cross-ratio CDF (per https://hal.inria.fr/inria-00590012/document), with some modifications
   // since all of our points are in increasing order, they are actually modeled by only the F1 portion of the CDF
   float crcdf = (1.0/2 + (cr*(1-cr)*log((cr-1)/cr) - cr + 1.0/2)) * 2;
-  khint_t h = (khint_t)(crcdf * bins); // the number of bins used here will impact the accuracy signficantly
+  khint_t h = (khint_t)(crcdf * bins + bins * (labels[3].position - labels[0].position)/1000); // the number of bins used here will impact the accuracy signficantly
   return h;
 }
 

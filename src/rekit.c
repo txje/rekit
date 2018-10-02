@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
   char* bam_file = NULL; // .bam file path/name (aligned)
   char* restriction_seq = NULL; // restriction enzyme or label recognition sequence (must also be reverse complemented if not symmetrical)
   char* source_outfile = NULL; // output file for the truth/source positions
-  int q = 4; // q-gram size
+  int q = 5; // q-gram size (set to 5 to make sure when we go to hash we have 5 to make sets of 4-mers with each missing)
   int h = 10; // number of hashes
   int verbose = 0;
   int chain_threshold = 1;
