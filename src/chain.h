@@ -30,7 +30,8 @@
 
 typedef struct score_pos {
   int score;
-  int pos;
+  int anchor_idx;
+  int score_idx;
   uint32_t ref;
   int prev;
   uint8_t used;
@@ -39,6 +40,7 @@ typedef struct score_pos {
 typedef kvec_t(score_pos) scoreVec;
 
 typedef struct chain {
+  int score;
   pairVec anchors;
   uint32_t ref;
 } chain;

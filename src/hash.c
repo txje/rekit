@@ -179,10 +179,10 @@ khash_t(matchHash)* lookup(label* labels, size_t n_labels, uint32_t read_id, int
 void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, FILE* o, int readLimit, int max_qgrams, int chain_threshold, float dtw_threshold, int bin_size) {
   int i, j, l;
   uint32_t target;
-  int max_chains = 100; // this can be a parameter
+  int max_chains = 10000; // this can be a parameter
   int max_alignments = 3; // this can be a parameter
   int match_score = 4; // ? idk what to do with this
-  int max_gap = 10; // need to test/refine this
+  int max_gap = 50; // need to test/refine this
   int min_chain_length = 3; // need to test/refine this
 
   uint32_t f = 0;
@@ -201,19 +201,14 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, FILE* o, int readLi
     chain* chains = do_chain(hits, max_chains, match_score, max_gap, min_chain_length);
     int n_chains = 0;
     // count chains (if fewer than max_chains, the chains array is terminated by an empty chain vector)
-    for(i = 0; i < max_chains; i++) {
-      if(kv_size(chains[i].anchors) > 0)
-        n_chains = i+1;
-      else
-        break;
-    }
+    for(n_chains = 0; n_chains < max_chains && kv_size(chains[n_chains].anchors) > 0; n_chains++);
 
     /*
-    printf("%d chains found with anchor sizes: ", n_chains);
+    fprintf(stderr, "%d chains found with anchor sizes: ", n_chains);
     for(i = 0; i < n_chains; i++) {
-      printf("%d, ", kv_size(chains[i].anchors));
+      fprintf(stderr, "%d, ", kv_size(chains[i].anchors));
     }
-    printf("\n");
+    fprintf(stderr, "\n");
     */
 
     int* starts = malloc(n_chains * sizeof(int));
@@ -237,8 +232,10 @@ void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, FILE* o, int readLi
       int est_ren = c.labels[target][kv_A(chains[j].anchors, kv_size(chains[j].anchors)-1).tpos].position + (b.labels[f][b.map_lengths[f]-1].position - b.labels[f][kv_A(chains[j].anchors, kv_size(chains[j].anchors)-1).qpos].position);
       while(ren < c.map_lengths[target]-1 && c.labels[target][ren].position < est_ren)
         ren++;
+
       /*
       fprintf(stderr, "chain %d\n", j);
+      fprintf(stderr, "score %d\n", chains[j].score);
       fprintf(stderr, "est ref pos %d - %d\n", est_rst, est_ren);
       fprintf(stderr, "r indices %d - %d\n", rst, ren);
       */

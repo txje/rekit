@@ -35,22 +35,33 @@ chain* do_chain(khash_t(matchHash) *hits, int max_chains, int match_score, int m
     if (!kh_exist(hits, bin)) continue;
     target = kh_key(hits, bin);
     anchors = kh_val(hits, bin);
+    //fprintf(stderr, "Ref %u has %u anchors\n", target, kv_size(anchors));
 
     //sort anchor pairs by target pos increasing
     ks_mergesort(pos_pair_cmp, kv_size(anchors), anchors.a, 0);
 
     s.score = match_score;
-    s.pos = ref_offset;
+    s.anchor_idx = 0;
+    s.score_idx = ref_offset;
     s.prev = -1;
     s.used = 0;
     s.ref = target;
     kv_push(score_pos, scores, s); // this actually copies the score_pos struct values, so we can reuse 's'
 
+    int st = 0;
+
     for(i = 1; i < kv_size(anchors); i++) {
 
-      s.score = match_score;
-      s.pos = i;
+      //s.score = match_score;
+      s.score = 1;
+      s.anchor_idx = i;
+      s.score_idx = i + ref_offset;
       s.prev = -1; // no predecessor
+
+      /*
+      while(st < i && kv_A(anchors, i).tpos - kv_A(anchors, st).tpos > 100000) st++;
+      s.score = i - st;
+      */
 
       for(j = i < h ? 0 : i-h; j < i; j++) {
         qdiff = (int)kv_A(anchors, i).qpos - (int)kv_A(anchors, j).qpos;
@@ -58,19 +69,27 @@ chain* do_chain(khash_t(matchHash) *hits, int max_chains, int match_score, int m
         if(tdiff <= 0 || qdiff <= 0 || qdiff > max_gap || tdiff > max_gap) { // we often have multiple hits to the same target pos, so we can't let them chain with either other
           continue;
         }
+        /*
         diffdiff = (qdiff > tdiff ? qdiff - tdiff : tdiff - qdiff);
         gap_cost = (diffdiff == 0 ? 0 : 0.01 * match_score * diffdiff + 0.5 * log2(diffdiff)); // affine gap penalty a la minimap2
         qdiff = (qdiff > tdiff ? tdiff : qdiff); // now not qdiff but the minimum difference
         score = kv_A(scores, j + ref_offset).score + (qdiff > match_score ? match_score : qdiff) - gap_cost;
+        */
+        score = kv_A(scores, j + ref_offset).score + 1; // scores are now just the # of properly ordered anchors
         if(score > s.score) {
           s.score = score;
           s.prev = j + ref_offset;
         }
       }
+
       kv_push(score_pos, scores, s);
     }
     ref_offset = kv_size(scores);
   }
+
+  //fprintf(stderr, "%u scores\n", kv_size(scores));
+
+  min_chain_length = 1; // TODO: -- undo me unless we keep using the raw counts --
 
   // copy unsorted scores:
   score_pos* anchor_scores = malloc(sizeof(score_pos) * kv_size(scores));
@@ -79,13 +98,14 @@ chain* do_chain(khash_t(matchHash) *hits, int max_chains, int match_score, int m
   ks_mergesort(score_pos_cmp, kv_size(scores), scores.a, 0);
 
   // build non-overlapping chains from highest to lowest score
-  chain* chains = malloc(sizeof(chain) * max_chains); // * 1.05);
+  chain* chains = malloc(sizeof(chain) * max_chains);
   int c; // chain index
   i = 0; // scores index
   for(c = 0; c < max_chains && i < kv_size(scores); c++) {
     //fprintf(stderr, "building chain %d\n", c);
     int chain_len = 0;
-    int chain_pos = kv_A(scores, i).pos; // get the pos which should be index into the anchor_scores array
+    int chain_pos = kv_A(scores, i).score_idx; // get the pos which should be index into the anchor_scores array
+    //fprintf(stderr, "chain pos: %d (of %u)\n", chain_pos, kv_size(scores));
     // get anchors associated with this score/ref
     bin = kh_get(matchHash, hits, kv_A(scores, i).ref);
     if(bin == kh_end(hits)) { // key not found, *shouldn't* happen
@@ -93,8 +113,9 @@ chain* do_chain(khash_t(matchHash) *hits, int max_chains, int match_score, int m
       return (chain*)NULL;
     }
     anchors = kh_val(hits, bin);
+    //fprintf(stderr, "pos %d used: %u\n", chain_pos, anchor_scores[chain_pos].used);
     while(anchor_scores[chain_pos].used == 0) {
-      //printf("backtracking from %d (%d:%d) to %d\n", chain_pos, kv_A(anchors, anchor_scores[chain_pos].pos).qpos, kv_A(anchors, anchor_scores[chain_pos].pos).tpos, anchor_scores[chain_pos].prev);
+      //fprintf(stderr, "backtracking from %d (%d:%d) to %d\n", chain_pos, kv_A(anchors, anchor_scores[chain_pos].anchor_idx).qpos, kv_A(anchors, anchor_scores[chain_pos].anchor_idx).tpos, anchor_scores[chain_pos].prev);
       chain_len++;
       if(anchor_scores[chain_pos].prev == -1)
         break;
@@ -107,18 +128,20 @@ chain* do_chain(khash_t(matchHash) *hits, int max_chains, int match_score, int m
     }
     kv_init(chains[c].anchors);
     chains[c].ref = kv_A(scores, i).ref;
-    //printf("chain %d (score %d, %d anchors) is from ref %u anchor %d\n", c, kv_A(scores, i).score, chain_len, chains[c].ref, kv_A(scores, i).pos);
+    chains[c].score = kv_A(scores, i).score;
+    //fprintf(stderr, "chain %d (score %d, %d anchors) is from ref %u anchor %d\n", c, kv_A(scores, i).score, chain_len, chains[c].ref, kv_A(scores, i).anchor_idx);
     kv_resize(posPair, chains[c].anchors, chain_len);
     chains[c].anchors.n = chain_len; // set the size explicitly, then we'll set the values explicitly
-    //fprintf(stderr, "creating chain %d of length %d\n", c, kv_size(chains[c]));
-    chain_pos = kv_A(scores, i).pos;
+    //fprintf(stderr, "creating chain %d of length %d\n", c, kv_size(chains[c].anchors));
+    chain_pos = kv_A(scores, i).score_idx;
     for(j = 0; j < chain_len; j++) {
       anchor_scores[chain_pos].used = 1;
-      kv_A(chains[c].anchors, chain_len-1-j) = kv_A(anchors, anchor_scores[chain_pos].pos);
+      kv_A(chains[c].anchors, chain_len-1-j) = kv_A(anchors, anchor_scores[chain_pos].anchor_idx);
       chain_pos = anchor_scores[chain_pos].prev;
     }
     i++;
   }
+  fprintf(stderr, "made %d chains\n", c);
   if(c < max_chains) kv_init(chains[c].anchors); // an empty vector will indicate the end of the chains array if there are fewer than max_chains results
 
   free(anchor_scores);
