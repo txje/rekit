@@ -82,4 +82,6 @@ static kh_inline khint_t qgram_hash(uint8_t *s, int k) {
 
 int hash_cmap(cmap b, cmap c, FILE* o, int q, int chain_threshold, float dtw_threshold, int max_qgrams, int readLimit, int bin_size, int resolution_min);
 
+uint32_t* u32_get_fragments(label* labels, size_t n_labels, int bin_size);
+
 #endif /* __HASH_H__ */

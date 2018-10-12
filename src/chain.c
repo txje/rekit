@@ -87,7 +87,7 @@ chain* do_chain(khash_t(matchHash) *hits, int max_chains, int match_score, int m
     ref_offset = kv_size(scores);
   }
 
-  //fprintf(stderr, "%u scores\n", kv_size(scores));
+  fprintf(stderr, "%u scores\n", kv_size(scores));
 
   min_chain_length = 1; // TODO: -- undo me unless we keep using the raw counts --
 

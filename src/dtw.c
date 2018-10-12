@@ -45,6 +45,9 @@ v |
 #include "klib/kvec.h" // C dynamic vector
 #include "dtw.h"
 
+#define aln_gt(a,b) ((a).score > (b).score)
+KSORT_INIT(aln_cmp, result, aln_gt)
+
 /*
  * Overlap dynamic programming (time warping) alignment
  *

@@ -36,8 +36,8 @@
 #include "chain.h"
 #include "klib/ksort.h"
 
-#define aln_gt(a,b) ((a).score > (b).score)
-KSORT_INIT(aln_cmp, result, aln_gt)
+//#define aln_gt(a,b) ((a).score > (b).score)
+//KSORT_INIT(aln_cmp, result, aln_gt)
 
 uint8_t* get_fragments(label* labels, size_t n_labels, int bin_size) {
   uint8_t* frags = malloc(sizeof(uint8_t) * n_labels);
@@ -163,10 +163,20 @@ khash_t(matchHash)* lookup(label* labels, size_t n_labels, uint32_t read_id, int
             if(absent) { // bin is empty (unset)
               kv_init(kh_value(hits, bin));
             }
-            posPair ppair; // to store matching query/target positions
-            ppair.qpos = i;
-            ppair.tpos = kv_A(matches, m).pos;
-            kv_push(posPair, kh_value(hits, bin), ppair);
+            // check back to be sure we haven't already found this pair (this is possible now with the 4/5-mers)
+            char exists = 0;
+            for(j = kv_size(kh_value(hits, bin))-1; j > 0 && kv_A(kh_value(hits, bin), j).qpos == i; j--) {
+              if(kv_A(kh_value(hits, bin), j).tpos == kv_A(matches, m).pos) {
+                exists = 1;
+                break;
+              }
+            }
+            if(!exists) { // this pair was not already found
+              posPair ppair; // to store matching query/target positions
+              ppair.qpos = i;
+              ppair.tpos = kv_A(matches, m).pos;
+              kv_push(posPair, kh_value(hits, bin), ppair);
+            }
           }
         }
       }
@@ -179,7 +189,7 @@ khash_t(matchHash)* lookup(label* labels, size_t n_labels, uint32_t read_id, int
 void query_db(cmap b, int k, khash_t(qgramHash) *db, cmap c, FILE* o, int readLimit, int max_qgrams, int chain_threshold, float dtw_threshold, int bin_size) {
   int i, j, l;
   uint32_t target;
-  int max_chains = 10000; // this can be a parameter
+  int max_chains = 10000000; // this can be a parameter
   int max_alignments = 3; // this can be a parameter
   int match_score = 4; // ? idk what to do with this
   int max_gap = 50; // need to test/refine this

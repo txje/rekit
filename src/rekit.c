@@ -35,20 +35,22 @@
 #include "bnx.h"
 #include "hash.h"
 //#include "lsh.h"
-//#include "dtw.h"
 #include "sim.h"
 #include "digest.h"
 #include "bam.h"
+#include "dtw.h"
 
 void usage() {
   printf("Usage: rekit [command] [options]\n");
   printf("Commands:\n");
   printf("  align:    align BNX molecules to reference CMAP\n");
+  printf("  dtw:      DTW-only align BNX molecules to reference CMAP\n");
   printf("  simulate: simulate molecules\n");
   printf("  digest:   in silico digestion\n");
   printf("  label:    produce alignment-based reference CMAP\n");
   printf("Options:\n");
   printf("  align    -bc\n");
+  printf("  dtw      -bc\n");
   printf("  simulate -frx --break-rate --fn --fp --min-frag --stretch-mean --stretch-std --source-output\n");
   printf("  digest   -fr\n");
   printf("  label    -a\n");
@@ -234,7 +236,7 @@ int main(int argc, char *argv[]) {
     ret = write_cmap(&c, stdout);
   }
 
-  else if(strcmp(command, "align") == 0) {
+  else if(strcmp(command, "align") == 0 || strcmp(command, "dtw") == 0) {
     if(bnx_file == NULL) {
       fprintf(stderr, "BNX file (-b) required\n");
       return 1;
@@ -257,7 +259,56 @@ int main(int argc, char *argv[]) {
     t1 = time(NULL);
     printf("# Loaded CMAP '%s': %d maps w/%d recognition sites in %.2f seconds\n", cmap_file, c.n_maps, c.n_rec_seqs, t1-t0);
 
-    int ret = hash_cmap(b, c, o, q, chain_threshold, dtw_threshold, max_qgrams, read_limit, bin_size, min_frag);
+    int ret;
+    if(strcmp(command, "align") == 0)
+      ret = hash_cmap(b, c, o, q, chain_threshold, dtw_threshold, max_qgrams, read_limit, bin_size, min_frag);
+    else { // dtw
+
+      int q, r;
+      result aln;
+      for(q = 0; q < 100; q++) {
+        result* alignments = malloc(c.n_maps * sizeof(result));
+        uint32_t* qfrags = u32_get_fragments(b.labels[q], b.map_lengths[q], 1); // 1 is bin_size (no discretization)
+        for(r = 0; r < c.n_maps; r++) {
+          uint32_t* rfrags = u32_get_fragments(c.labels[r], c.map_lengths[r], 1);
+          aln = dtw(qfrags, rfrags, b.map_lengths[q], c.map_lengths[r], -1, -1, 1000); // ins_score, del_score, neutral_deviation
+          aln.ref = r;
+          if(aln.failed) {
+            fprintf(stderr, "Alignment failed of query %d to ref %d\n", q, r);
+          }
+          alignments[r] = aln;
+        }
+
+        // sort alignments by (DTW) score decreasing
+        ks_mergesort(aln_cmp, c.n_maps, alignments, 0);
+
+        for(r = 0; r < c.n_maps; r++) {
+          aln = alignments[r];
+          if(aln.score < dtw_threshold) break;
+          fprintf(o, "%u\t", q); // query id
+          fprintf(o, "%u\t", aln.ref); // target id
+          fprintf(o, "%u\t", 0); // query reverse?
+          fprintf(o, "%u\t", aln.qstart); // query start idx
+          fprintf(o, "%u\t", aln.qend); // query end idx
+          fprintf(o, "%u\t", b.map_lengths[q]); // query len idx
+          fprintf(o, "%u\t", b.labels[q][aln.qstart].position); // query start
+          fprintf(o, "%u\t", b.labels[q][aln.qend > 0 ? aln.qend-1 : 0].position); // query end
+          fprintf(o, "%u\t", b.ref_lengths[q]); // query len
+          fprintf(o, "%u\t", aln.tstart); // ref start idx
+          fprintf(o, "%u\t", aln.tend); // ref end idx
+          fprintf(o, "%u\t", c.map_lengths[aln.ref]); // ref len idx
+          fprintf(o, "%u\t", c.labels[aln.ref][aln.tstart].position); // ref start
+          fprintf(o, "%u\t", c.labels[aln.ref][aln.tend > 0 ? aln.tend-1 : 0].position); // ref end
+          fprintf(o, "%u\t", c.ref_lengths[aln.ref]); // ref len
+          fprintf(o, "%f\t", aln.score); // dtw score
+          // dtw path
+          for(i = 0; i < kv_size(aln.path); i++) {
+            fprintf(o, "%c", kv_A(aln.path, i) == 0 ? '.' : (kv_A(aln.path, i) == 1 ? 'I' : 'D'));
+          }
+          fprintf(o, "\n");
+        }
+      }
+    }
 
     // TODO: clean up cmap/bnx memory
   }
