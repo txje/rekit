@@ -86,10 +86,10 @@ int insert_rmap(label* labels, size_t n_labels, uint32_t read_id, int k, unsigne
   if(n_labels < k) return 1;
   for(i = 0; i <= n_labels-k; i++) {
     khint_t qgram; // khint_t is probably u32
-    //qgram = qgram_hash((frags+i), k);
     int skip;
-    for(skip = 1; skip <= 4; skip++) {
+    for(skip = 1; skip < k; skip++) {
       qgram = xratio_hash((labels+i), bin_size, skip);
+      //qgram = qgram_hash((frags+i), k, skip);
       //printf("# %dth %d-gram: %u\n", i, k, qgram);
 
       // insert qgram:readId,i into db
@@ -141,13 +141,15 @@ khash_t(matchHash)* lookup(label* labels, size_t n_labels, uint32_t read_id, int
   if(n_labels < k) return hits;
   for(i = 0; i <= n_labels-k; i++) {
     khint_t qgram; // khint_t is probably u32
-    //qgram = qgram_hash((frags+i), k);
     int skip;
-    for(skip = 1; skip <= 4; skip++) {
+    for(skip = 1; skip < k; skip++) {
       qgram = xratio_hash((labels+i), bin_size, skip);
+      //qgram = qgram_hash((frags+i), k, skip);
+
       //fprintf(stderr, "# %dth %d-gram: %u\n", i, k, qgram);
 
       khint_t size_close, close;
+      //close = qgram;
       for(size_close = qgram > bin_size ? qgram-bin_size : qgram; size_close < qgram + bin_size + 1; size_close += bin_size) {
         for(close = size_close > 0 ? size_close-1 : 0; close < size_close+2; close++) {
           //fprintf(stderr, "adding hash val %u\n", close);

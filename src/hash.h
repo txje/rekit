@@ -73,10 +73,12 @@ static kh_inline khint_t xratio_hash(label* labels, int bins, int skip) {
 }
 
 // similar to klib's khash.h, except we explicitly limit the length - it doesn't have to be null-terminated
-static kh_inline khint_t qgram_hash(uint8_t *s, int k) {
+static kh_inline khint_t qgram_hash(uint8_t *s, int k, int skip) {
   int i;
   khint_t h = (khint_t)*s;
-  for (i = 1; i < k; i++) h = (h << 5) - h + (khint_t)*(s+i);
+  for (i = 1; i < k; i++)
+    if(i != skip)
+      h = (h << 5) - h + (khint_t)*(s+i);
   return h;
 }
 

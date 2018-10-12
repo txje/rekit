@@ -87,7 +87,7 @@ chain* do_chain(khash_t(matchHash) *hits, int max_chains, int match_score, int m
     ref_offset = kv_size(scores);
   }
 
-  fprintf(stderr, "%u scores\n", kv_size(scores));
+  //fprintf(stderr, "%u scores\n", kv_size(scores));
 
   min_chain_length = 1; // TODO: -- undo me unless we keep using the raw counts --
 
@@ -141,7 +141,7 @@ chain* do_chain(khash_t(matchHash) *hits, int max_chains, int match_score, int m
     }
     i++;
   }
-  fprintf(stderr, "made %d chains\n", c);
+  //fprintf(stderr, "made %d chains\n", c);
   if(c < max_chains) kv_init(chains[c].anchors); // an empty vector will indicate the end of the chains array if there are fewer than max_chains results
 
   free(anchor_scores);

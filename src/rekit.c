@@ -308,6 +308,7 @@ int main(int argc, char *argv[]) {
           fprintf(o, "\n");
         }
       }
+      ret = 0;
     }
 
     // TODO: clean up cmap/bnx memory

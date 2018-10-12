@@ -65,7 +65,7 @@ Min* minhash (byteVec frags, int k, int h, uint32_t denom, uint32_t hash_seeds[]
   // there is always a nick value given for the END of the fragment, but not one at 0
 
   for(i = 0; i <= slen-k; i++) {
-    khint_t qgram = qgram_hash((frags.a+i), k); // khint_t is probably u32
+    khint_t qgram = qgram_hash((frags.a+i), k, -1); // khint_t is probably u32
     //printf("# %dth %d-gram: %d\n", i, k, qgram);
 
     for(j = 0; j < h; j++) {
