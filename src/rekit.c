@@ -307,6 +307,9 @@ int main(int argc, char *argv[]) {
           }
           fprintf(o, "\n");
         }
+        if(r == 0) {
+          fprintf(o, "%u\t-\t-\t-\t-\t%u\t-\t-\t%u\t-\t-\t-\t-\t-\t-\t-\t-\n", q, b.map_lengths[q], b.ref_lengths[q]);
+        }
       }
       ret = 0;
     }

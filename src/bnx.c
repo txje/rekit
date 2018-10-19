@@ -133,6 +133,8 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
     c->labels[mapid][i].position = (uint32_t)atof(token);
     c->labels[mapid][i].channel = (uint8_t)channel;
     c->labels[mapid][i].occurrence = 0; // this is not used for molecule data, so it will always be 0
+    c->labels[mapid][i].stdev = 0; // these will be set explicitly for all except the last label
+    c->labels[mapid][i].coverage = 0;
     token = strtok(NULL, delim);
     i++;
   }
@@ -202,18 +204,20 @@ int write_bnx(cmap *c, FILE* fp) {
   fprintf(fp, "# Quality Score QX11: Label SNR for channel 1\n");
   fprintf(fp, "# Quality Score QX12: Label Intensity for channel 1\n");
 
+  // ScanNumber is always 1, ScanDirection is unknown (-1), GlobalScanNumber is always 1, RunId is always 1
   for(i = 0; i < c->n_maps; i++) {
-    fprintf(fp, "%d\t%d\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t%d\tsim\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", 0, i+1, (float)c->ref_lengths[i], 0.0, 0.0, c->map_lengths[i]-1, i+1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    fprintf(fp, "%d\t%d\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t%d\tsim\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", 0, i+1, (float)c->ref_lengths[i], 0.0, 0.0, c->map_lengths[i]-1, i+1, 1, -1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1);
     fprintf(fp, "1");
     for(k = 0; k < c->map_lengths[i]; k++) {
       fprintf(fp, "\t%.2f", (float)c->labels[i][k].position);
     }
+    // qualities have one fewer than lengths because the end position has a position but no quality
     fprintf(fp, "\nQX11");
-    for(k = 0; k < c->map_lengths[i]; k++) {
+    for(k = 0; k < c->map_lengths[i] - 1; k++) {
       fprintf(fp, "\t%.2f", (float)c->labels[i][k].stdev);
     }
     fprintf(fp, "\nQX12");
-    for(k = 0; k < c->map_lengths[i]; k++) {
+    for(k = 0; k < c->map_lengths[i] - 1; k++) {
       fprintf(fp, "\t%.2f", (float)c->labels[i][k].coverage);
     }
     fprintf(fp, "\n");

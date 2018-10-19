@@ -68,17 +68,22 @@ static kh_inline khint_t xratio_hash(label* labels, int bins, int skip) {
   // cross-ratio CDF (per https://hal.inria.fr/inria-00590012/document), with some modifications
   // since all of our points are in increasing order, they are actually modeled by only the F1 portion of the CDF
   float crcdf = (1.0/2 + (cr*(1-cr)*log((cr-1)/cr) - cr + 1.0/2)) * 2;
-  khint_t h = (khint_t)(crcdf * bins + bins * (labels[skip < 4 ? 4 : 3].position - labels[0].position)/1000); // the number of bins used here will impact the accuracy signficantly
+  khint_t h = (khint_t)(crcdf * bins + bins * (labels[skip < 4 ? 4 : 3].position - labels[0].position)/2000); // the number of bins used here will impact the accuracy signficantly
   return h;
 }
 
 // similar to klib's khash.h, except we explicitly limit the length - it doesn't have to be null-terminated
-static kh_inline khint_t qgram_hash(uint8_t *s, int k, int skip) {
-  int i;
-  khint_t h = (khint_t)*s;
-  for (i = 1; i < k; i++)
-    if(i != skip)
-      h = (h << 5) - h + (khint_t)*(s+i);
+static kh_inline khint_t qgram_hash(uint8_t *s, int k, int skip, uint32_t l) {
+  int i, j = 0;
+  khint_t h = 0;
+  for (i = 0; i < k; i++) {
+    if(i != skip) {
+      // l is a bit vector representing whether to ceil (+1) each value
+      // if skipping the next label, add the two adjacent sizes together
+      //h = (h << 5) - h + (khint_t)*(s+i) + (i+1==skip ? (khint_t)*(s+i+1) : 0) + (l>>j++ & 1);
+      h = (h << 5) - h + (khint_t)*(s+i) + (l>>j++ & 1);
+    }
+  }
   return h;
 }
 

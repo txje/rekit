@@ -65,12 +65,17 @@ result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t i
 
   // must be dynamically allocated to prevent stack overflows (on *some* systems)
   // to make this more efficient for our uses, they could be allocated once for the largest sequences and reused
+  // TODO: score and size matrices actually only need to keep 2 rows
   float* score_matrix[qlen+1];
   uint8_t* direction_matrix[qlen+1];
+  size_t* q_cum_size[qlen+1]; // keeps track of accumulated sizes of indel'd fragments
+  size_t* t_cum_size[qlen+1]; // keeps track of accumulated sizes of indel'd fragments
   int i;
   for(i = 0; i <= qlen; i++) {
     score_matrix[i] = (float*)malloc((tlen+1) * sizeof(float));
     direction_matrix[i] = (uint8_t*)malloc((tlen+1) * sizeof(uint8_t));
+    q_cum_size[i] = (size_t*)malloc((tlen+1) * sizeof(size_t));
+    t_cum_size[i] = (size_t*)malloc((tlen+1) * sizeof(size_t));
   }
 
   int x, y;
@@ -78,18 +83,27 @@ result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t i
   // initialize first row and first column for local alignment
   for(y = 1; y <= qlen; y++) {
     score_matrix[y][0] = 0; // LOW for full-query, partial-target alignment
+    q_cum_size[y][0] = 0;
+    t_cum_size[y][0] = 0;
   }
   for(x = 0; x <= tlen; x++) {
     score_matrix[0][x] = 0;
+    q_cum_size[0][x] = 0;
+    t_cum_size[0][x] = 0;
   }
 
-  float match, ins, del;
+  float match, qmatch, tmatch, qtmatch, ins, del; // qmatch and tmatch are different kinds of matches were it accounts for only the extra q_size or t_size
 
 
   for(y = 0; y < qlen; y++) {
     for(x = 0; x < tlen; x++) {
       // resetting any negative values to 0 is what makes this local alignment - if you don't do that it will be at least semi-global
+      qtmatch = score_matrix[y][x] + score(q_cum_size[y][x] + query[y], t_cum_size[y][x] + target[x], neutral_deviation) + 0.2;
+      tmatch = score_matrix[y][x] + score(query[y], t_cum_size[y][x] + target[x], neutral_deviation) + 0.1;
+      qmatch = score_matrix[y][x] + score(q_cum_size[y][x] + query[y], target[x], neutral_deviation) + 0.1;
       match = score_matrix[y][x] + score(query[y], target[x], neutral_deviation);
+      // basically, you get a bonus for using the leftover size from skipped fragments, but you don't have to
+      match = match > qmatch && match > tmatch && match > qtmatch ? match : (qtmatch > qmatch && qtmatch > tmatch ? qtmatch : (qmatch > tmatch ? qmatch : tmatch));
       ins = score_matrix[y][x+1] + ins_score;
       del = score_matrix[y+1][x] + del_score;
 
@@ -99,12 +113,16 @@ result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t i
       if(match >= ins && match >= del) {
         score_matrix[y+1][x+1] = match;
         direction_matrix[y+1][x+1] = MATCH;
+        q_cum_size[y+1][x+1] = 0;
+        t_cum_size[y+1][x+1] = 0;
       } else if(ins >= del) {
         score_matrix[y+1][x+1] = ins;
         direction_matrix[y+1][x+1] = INS;
+        q_cum_size[y+1][x+1] = q_cum_size[y][x+1] + query[y];
       } else {
         score_matrix[y+1][x+1] = del;
         direction_matrix[y+1][x+1] = DEL;
+        t_cum_size[y+1][x+1] = t_cum_size[y+1][x] + target[x];
       }
     }
   }

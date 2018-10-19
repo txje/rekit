@@ -74,33 +74,35 @@ uint32_t* u32_get_fragments(label* labels, size_t n_labels, int bin_size) {
  * returns: 0 if successful, else 1
  */
 int insert_rmap(label* labels, size_t n_labels, uint32_t read_id, int k, unsigned char reverse, khash_t(qgramHash) *db, int bin_size) {
-  int i, j;
+  int i, j, l, absent, skip;
 
   // nick pos values are ints, rounded from the double in the bnx file, and may be 4 or 8 bytes long
   // they are related to the length of the whole fragment, so typically max out in the 100s of thousands (avg ~200k)
   // there is always a nick value given for the END of the fragment, but not one at 0
 
-  int absent;
   khint_t bin; // hash bin (result of kh_put)
   uint8_t* frags = get_fragments(labels, n_labels, bin_size);
   if(n_labels < k) return 1;
   for(i = 0; i <= n_labels-k; i++) {
     khint_t qgram; // khint_t is probably u32
-    int skip;
     for(skip = 1; skip < k; skip++) {
-      qgram = xratio_hash((labels+i), bin_size, skip);
-      //qgram = qgram_hash((frags+i), k, skip);
-      //printf("# %dth %d-gram: %u\n", i, k, qgram);
+      //for(l = 0; l < pow(2, k-1); l++) { // iterate through a bit vector representing whether each position should be ceil'd
+      for(l = 0; l < 1; l++) { // iterate through a bit vector representing whether each position should be ceil'd
+        //qgram = xratio_hash((labels+i), bin_size, skip);
+        qgram = qgram_hash((frags+i), k, skip, l);
+        //printf("# %dth %d-gram: %u\n", i, k, qgram);
 
-      // insert qgram:readId,i into db
-      bin = kh_put(qgramHash, db, qgram, &absent);
-      if(absent) { // bin is empty (unset)
-        kv_init(kh_value(db, bin));
+        // insert qgram:readId,i into db
+        bin = kh_put(qgramHash, db, qgram, &absent);
+        if(absent) { // bin is empty (unset)
+          kv_init(kh_value(db, bin));
+        }
+        // TODO: can reduce db memory usage by making this a pointer to a shared readPos among jittered hashes
+        readPos r;
+        r.readNum = (read_id << 1); // forward strand since its padded with a 0
+        r.pos = i;
+        kv_push(readPos, kh_value(db, bin), r);
       }
-      readPos r;
-      r.readNum = (read_id << 1); // forward strand since its padded with a 0
-      r.pos = i;
-      kv_push(readPos, kh_value(db, bin), r);
     }
   }
 
@@ -128,60 +130,75 @@ void build_hash_db(cmap c, int k, khash_t(qgramHash) *db, int readLimit, int bin
   }
 }
 
+// floor: the index of the fragment to floor
+int jitter_bins(uint8_t *frags, int i, int k, int skip, khash_t(qgramHash) *db, khash_t(matchHash) *hits, int max_qgrams) {
+  int j, m, absent;
+  uint32_t l;
+  khint_t bin; // hash bin (result of kh_put)
+
+  //qgram = xratio_hash((labels+i), bin_size, skip, floor);
+  //for(l = 0; l < pow(2, k-1); l++) { // iterate through a bit vector representing whether each position should be ceil'd
+  for(l = 0; l < 1; l++) { // iterate through a bit vector representing whether each position should be ceil'd
+    khint_t qgram = qgram_hash((frags+i), k, skip, l);
+
+    //fprintf(stderr, "# %dth %d-gram (%u): %u\n", i, k, l, qgram);
+
+    khint_t size_close, close;
+    close = qgram;
+    /*
+    for(size_close = qgram > bin_size ? qgram-bin_size : qgram; size_close < qgram + bin_size + 1; size_close += bin_size) {
+      for(close = size_close > 0 ? size_close-1 : 0; close < size_close+2; close++) {
+    */
+        //fprintf(stderr, "adding hash val %u\n", close);
+        bin = kh_get(qgramHash, db, close);
+        if(bin == kh_end(db)) // key not found, IDK what happens if you don't test this
+          continue;
+        matchVec matches = kh_val(db, bin);
+        if(kv_size(matches) > max_qgrams) { // repetitive, ignore it
+          continue;
+        }
+        for(m = 0; m < kv_size(matches); m++) {
+          bin = kh_put(matchHash, hits, kv_A(matches, m).readNum>>1, &absent); // >>1 removes the fw/rv bit, which is always fw(0) right now
+          if(absent) { // bin is empty (unset)
+            kv_init(kh_value(hits, bin));
+          }
+          // check back to be sure we haven't already found this pair (this is possible now with the 4/5-mers)
+          char exists = 0;
+          for(j = kv_size(kh_value(hits, bin))-1; j > 0 && kv_A(kh_value(hits, bin), j).qpos == i; j--) {
+            if(kv_A(kh_value(hits, bin), j).tpos == kv_A(matches, m).pos) {
+              exists = 1;
+              break;
+            }
+          }
+          if(!exists) { // this pair was not already found
+            posPair ppair; // to store matching query/target positions
+            ppair.qpos = i;
+            ppair.tpos = kv_A(matches, m).pos;
+            kv_push(posPair, kh_value(hits, bin), ppair);
+          }
+        }
+    /*
+      }
+    }
+    */
+  } // </for l in range(2)>
+  return 0;
+}
+
 khash_t(matchHash)* lookup(label* labels, size_t n_labels, uint32_t read_id, int k, unsigned char reverse, khash_t(qgramHash) *db, int max_qgrams, int bin_size) {
-  int i, j, m, absent;
+  int i;
 
   // nick pos values are ints, rounded from the double in the bnx file, and may be 4 or 8 bytes long
   // they are related to the length of the whole fragment, so typically max out in the 100s of thousands (avg ~200k)
   // there is always a nick value given for the END of the fragment, but not one at 0
 
   khash_t(matchHash) *hits = kh_init(matchHash); // allocate hash table
-  khint_t bin; // hash bin (result of kh_put)
   uint8_t* frags = get_fragments(labels, n_labels, bin_size);
   if(n_labels < k) return hits;
   for(i = 0; i <= n_labels-k; i++) {
-    khint_t qgram; // khint_t is probably u32
     int skip;
     for(skip = 1; skip < k; skip++) {
-      qgram = xratio_hash((labels+i), bin_size, skip);
-      //qgram = qgram_hash((frags+i), k, skip);
-
-      //fprintf(stderr, "# %dth %d-gram: %u\n", i, k, qgram);
-
-      khint_t size_close, close;
-      //close = qgram;
-      for(size_close = qgram > bin_size ? qgram-bin_size : qgram; size_close < qgram + bin_size + 1; size_close += bin_size) {
-        for(close = size_close > 0 ? size_close-1 : 0; close < size_close+2; close++) {
-          //fprintf(stderr, "adding hash val %u\n", close);
-          bin = kh_get(qgramHash, db, close);
-          if(bin == kh_end(db)) // key not found, IDK what happens if you don't test this
-            continue;
-          matchVec matches = kh_val(db, bin);
-          if(kv_size(matches) > max_qgrams) { // repetitive, ignore it
-            continue;
-          }
-          for(m = 0; m < kv_size(matches); m++) {
-            bin = kh_put(matchHash, hits, kv_A(matches, m).readNum>>1, &absent); // >>1 removes the fw/rv bit, which is always fw(0) right now
-            if(absent) { // bin is empty (unset)
-              kv_init(kh_value(hits, bin));
-            }
-            // check back to be sure we haven't already found this pair (this is possible now with the 4/5-mers)
-            char exists = 0;
-            for(j = kv_size(kh_value(hits, bin))-1; j > 0 && kv_A(kh_value(hits, bin), j).qpos == i; j--) {
-              if(kv_A(kh_value(hits, bin), j).tpos == kv_A(matches, m).pos) {
-                exists = 1;
-                break;
-              }
-            }
-            if(!exists) { // this pair was not already found
-              posPair ppair; // to store matching query/target positions
-              ppair.qpos = i;
-              ppair.tpos = kv_A(matches, m).pos;
-              kv_push(posPair, kh_value(hits, bin), ppair);
-            }
-          }
-        }
-      }
+      int res = jitter_bins(frags, i, k, skip, db, hits, max_qgrams);
     }
   }
 
@@ -364,20 +381,20 @@ int hash_cmap(cmap b, cmap c, FILE* o, int q, int chain_threshold, float dtw_thr
   // -- maybe assess doing this the opposite way at a later date, I'm not sure which will be faster
   khash_t(qgramHash) *db = kh_init(qgramHash);
 
-  printf("# Hashing %d cmap fragments\n", c.n_maps);
+  fprintf(stderr, "# Hashing %d cmap fragments\n", c.n_maps);
   build_hash_db(c, q, db, readLimit, bin_size, resolution_min);
 
   time_t t1 = time(NULL);
-  printf("# Hashed rmaps in %d seconds\n", (t1-t0));
+  fprintf(stderr, "# Hashed rmaps in %d seconds\n", (t1-t0));
   t0 = t1;
   // -------------------------------------------------------------------------------
 
   // ---------------------------- Look up queries in db ------------------------------
-  printf("# Querying %d bnx fragments\n", b.n_maps);
+  fprintf(stderr, "# Querying %d bnx fragments\n", b.n_maps);
   query_db(b, q, db, c, o, readLimit, max_qgrams, chain_threshold, dtw_threshold, bin_size);
 
   t1 = time(NULL);
-  printf("# Queried and output in %d seconds\n", (t1-t0));
+  fprintf(stderr, "# Queried and output in %d seconds\n", (t1-t0));
   // ----------------------------------------------------------------------------------------
 
   // TODO: clean up vectors in each hash bin
