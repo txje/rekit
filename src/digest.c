@@ -97,8 +97,9 @@ int digest(char *seq, size_t seq_len, char **motifs, size_t n_motifs, float dige
             mers[1][m][mlen-j-1] = 'N';
             break;
           default:
-            fprintf(stderr, "Error: Invalid character encountered at seq pos %d: %c\n", i+j, seq[i+j]);
-            return 1;
+            fprintf(stderr, "Warning: Invalid character encountered at seq pos %d: %c\n", i+j, seq[i+j]);
+            mers[0][m][j] = 'N';
+            mers[1][m][mlen-j-1] = 'N';
         }
       }
       //printf("Comparing %s and %s (rc) to motif %s (%dbp)\n", mers[0][m], mers[1][m], motifs[m], mlen);
@@ -142,7 +143,7 @@ cmap digest_fasta(char* fasta_file, char** motifs, size_t n_motifs) {
   }
   seq = kseq_init(gzfp);
 
-  int refid = 0;
+  int refid = 1;
   while ((l = kseq_read(seq)) >= 0) {
     // name: seq->name.s, seq: seq->seq.s, length: l
     //printf("Reading %s (%i bp).\n", seq->name.s, l);
@@ -150,7 +151,7 @@ cmap digest_fasta(char* fasta_file, char** motifs, size_t n_motifs) {
     kv_init(labels);
     digest(seq->seq.s, l, motifs, n_motifs, 1.0, 0.0, 1000000000, &labels); // 1.0 true digest rate, 0.0 random shear rate (perfect)
     //printf("Produced %d labels\n", kv_size(labels));
-    add_map(&c, labels.a, kv_size(labels), 1); // channel 1
+    add_map(&c, refid++, labels.a, kv_size(labels), 1); // channel 1
   }
 
   gzclose(gzfp);
