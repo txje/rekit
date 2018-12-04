@@ -74,6 +74,7 @@ int read_cmap_header(FILE *fp, cmap *c) {
 			break;
 		}
 		if(fgets(buf, sizeof(buf), fp) == NULL) break; // returns a NULL pointer if there was nothing to read
+    //fprintf(stderr, "%s\n", buf);
 		if(string_begins_with(buf, " CMAP File Version:")) {
       assert(strcmp(get_val(buf), "0.1") == 0); // must be version 0.1
     }
@@ -89,9 +90,10 @@ int read_cmap_header(FILE *fp, cmap *c) {
 		}
 		if(string_begins_with(buf, " Number of Consensus Nanomaps:")) {
       c->n_maps = atoi(get_val(buf));
-      c->map_lengths = malloc(c->n_maps * sizeof(size_t));
-      c->ref_lengths = calloc(c->n_maps, sizeof(size_t));
-      c->labels = malloc(c->n_maps * sizeof(label*));
+      c->molecules = malloc(c->n_maps * sizeof(molecule));
+      for(i = 0; i < c->n_maps; i++) {
+        c->molecules[i].length = 0;
+      }
     }
 		//next_line(fp, buf, sizeof(buf));
 	}
@@ -120,22 +122,22 @@ static int read_cmap_line(FILE *fp, cmap *c) {
   assert(nfields == 9);
 
   int mapid = atoi(parts[0]) - 1;
-  assert(mapid < c->n_maps);
 
   // if this is the first observed label for this ref/map, initialize it
-  if(c->ref_lengths[mapid] == 0) {
-    c->ref_lengths[mapid] = (size_t)atof(parts[1]);
-    c->map_lengths[mapid] = (size_t)atoi(parts[2]) + 1; // actual count is always 1 higher... maybe doesn't count end marker
-    c->labels[mapid] = malloc(c->map_lengths[mapid] * sizeof(label));
+  if(c->molecules[mapid].length == 0) {
+    c->molecules[mapid].id = mapid+1;
+    c->molecules[mapid].length = (size_t)atof(parts[1]);
+    c->molecules[mapid].n_labels = (size_t)atoi(parts[2]) + 1; // actual count is always 1 higher... maybe doesn't count end marker
+    c->molecules[mapid].labels = malloc(c->molecules[mapid].n_labels * sizeof(label));
   }
   int site_id = atoi(parts[3]) - 1;
   //printf("map %d, channel %d (%d labels), label %d\n", mapid, channel, c->map_lengths[mapid][channel], site_id);
-  assert(site_id < c->map_lengths[mapid]);
-  c->labels[mapid][site_id].position = (uint32_t)atof(parts[5]);
-  c->labels[mapid][site_id].stdev = (float)atof(parts[6]);
-  c->labels[mapid][site_id].coverage = (uint16_t)atoi(parts[7]);
-  c->labels[mapid][site_id].channel = (uint8_t)atoi(parts[4]); // nickase channels start numbering at 1, 0 indicates end of the map/chromosome
-  c->labels[mapid][site_id].occurrence = (uint16_t)atoi(parts[8]);
+  assert(site_id < c->molecules[mapid].n_labels);
+  c->molecules[mapid].labels[site_id].position = (uint32_t)atof(parts[5]);
+  c->molecules[mapid].labels[site_id].stdev = (float)atof(parts[6]);
+  c->molecules[mapid].labels[site_id].coverage = (uint16_t)atoi(parts[7]);
+  c->molecules[mapid].labels[site_id].channel = (uint8_t)atoi(parts[4]); // nickase channels start numbering at 1, 0 indicates end of the map/chromosome
+  c->molecules[mapid].labels[site_id].occurrence = (uint16_t)atoi(parts[8]);
 
   free(ln);
   free(parts);
@@ -163,9 +165,9 @@ int write_cmap(cmap *c, FILE* fp) {
   fprintf(fp, "#f int\tfloat\tint\tint\tint\tfloat\tfloat\tint\tint\n");
 
   for(i = 0; i < c->n_maps; i++) {
-    for(k = 0; k < c->map_lengths[i]; k++) {
+    for(k = 0; k < c->molecules[i].n_labels; k++) {
       // very weird - if the parameters are not cast, they can be arbitrarily reordered in the output string (presumably to optimize type-matching)
-      fprintf(fp, "%u\t%.1f\t%u\t%u\t%u\t%.1f\t%.1f\t%u\t%u\n", i+1, (float)c->ref_lengths[i], c->map_lengths[i]-1, k+1, c->labels[i][k].channel, (float)c->labels[i][k].position, (float)c->labels[i][k].stdev, c->labels[i][k].coverage, c->labels[i][k].occurrence);
+      fprintf(fp, "%u\t%.1f\t%u\t%u\t%u\t%.1f\t%.1f\t%u\t%u\n", c->molecules[i].id, (float)c->molecules[i].length, c->molecules[i].n_labels-1, k+1, c->molecules[i].labels[k].channel, (float)c->molecules[i].labels[k].position, (float)c->molecules[i].labels[k].stdev, c->molecules[i].labels[k].coverage, c->molecules[i].labels[k].occurrence);
     }
   }
 
@@ -197,41 +199,38 @@ cmap read_cmap(const char *fn) {
 
 void init_cmap(cmap* c) {
   c->n_maps = 0;
-  c->ref_lengths = NULL;
-  c->map_lengths = NULL;
-  c->labels = NULL;
+  c->molecules = NULL;
   c->rec_seqs = NULL;
   c->n_rec_seqs = 0;
   kv_init(c->source);
 }
 
 // positions should include the end pos of the chromosome
-int add_map(cmap* c, uint32_t* positions, size_t n_pos, uint8_t channel) {
-  int mapid = c->n_maps;
+int add_map(cmap* c, uint32_t molid, uint32_t* positions, size_t n_pos, uint8_t channel) {
+  int idx = c->n_maps;
   c->n_maps++;
-  c->ref_lengths = realloc(c->ref_lengths, c->n_maps * sizeof(size_t));
-  c->map_lengths = realloc(c->map_lengths, c->n_maps * sizeof(size_t));
-  c->labels = realloc(c->labels, c->n_maps * sizeof(label*));
-  if(c->ref_lengths == NULL || c->map_lengths == NULL || c->labels == NULL) {
+  c->molecules = realloc(c->molecules, c->n_maps * sizeof(molecule*));
+  if(c->molecules == NULL) {
     fprintf(stderr, "Unable to allocate memory\n");
     return 1;
   };
-  c->ref_lengths[mapid] = positions[n_pos - 1];
-  c->map_lengths[mapid] = n_pos;
-  c->labels[mapid] = malloc(n_pos * sizeof(label));
+  c->molecules[idx].id = molid;
+  c->molecules[idx].length = positions[n_pos - 1];
+  c->molecules[idx].n_labels = n_pos;
+  c->molecules[idx].labels = malloc(n_pos * sizeof(label));
   int i;
   for(i = 0; i < n_pos; i++) {
-    c->labels[mapid][i].position = positions[i];
+    c->molecules[idx].labels[i].position = positions[i];
     if(i < n_pos - 1) {
-      c->labels[mapid][i].stdev = 1.0;
-      c->labels[mapid][i].coverage = 1;
-      c->labels[mapid][i].channel = channel;
-      c->labels[mapid][i].occurrence = 1;
+      c->molecules[idx].labels[i].stdev = 1.0;
+      c->molecules[idx].labels[i].coverage = 1;
+      c->molecules[idx].labels[i].channel = channel;
+      c->molecules[idx].labels[i].occurrence = 1;
     } else {
-      c->labels[mapid][i].stdev = 0.0;
-      c->labels[mapid][i].coverage = 1;
-      c->labels[mapid][i].channel = 0;
-      c->labels[mapid][i].occurrence = 0;
+      c->molecules[idx].labels[i].stdev = 0.0;
+      c->molecules[idx].labels[i].coverage = 1;
+      c->molecules[idx].labels[i].channel = 0;
+      c->molecules[idx].labels[i].occurrence = 0;
     }
   }
   return 0;

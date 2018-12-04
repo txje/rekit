@@ -36,6 +36,7 @@ typedef struct aln_result {
   uint32_t ref;
   uint32_t qstart;
   uint32_t qend;
+  uint8_t qrev;
   uint32_t tstart;
   uint32_t tend;
   uint8_t failed; // boolean flag
@@ -47,15 +48,23 @@ static uint8_t MATCH = 0, INS = 1, DEL = 2;
 static float LOW = -1e38; // the order of the lowest possible 4-byte (single-precision) float
 
 
-static float score(uint32_t a, uint32_t b, uint32_t neutral_deviation) {
+static float score(uint32_t a, uint32_t b, float neutral_deviation) {
   float diff = (a > b ? (a - b) : (b - a));
-  // score is:
-  // 1 if fragments are the same size
-  // 0 if fragments differ by neutral deviation
-  // -1 if size difference is 2x neutral deviation
-  return 1.0 - (diff / (float)neutral_deviation);
+  if(neutral_deviation >= 1.0) {
+    // score is:
+    // 1 if fragments are the same size
+    // 0 if fragments differ by neutral deviation
+    // -1 if size difference is 2x neutral deviation
+    return 1.0 - (diff / (float)neutral_deviation);
+  } else {
+    // score is:
+    // 1 if diff == 0
+    // 0 if diff / b == neutral deviation
+    // -1 if diff / b == 2 x neutral deviation
+    return 1.0 - (diff / (float)b / (float)neutral_deviation);
+  }
 }
 
-result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t ins_score, int8_t del_score, uint32_t neutral_deviation);
+result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t ins_score, int8_t del_score, float neutral_deviation, int rev);
 
 #endif /* __DTW_H__ */

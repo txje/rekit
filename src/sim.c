@@ -293,7 +293,7 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   c.n_rec_seqs = n_motifs;
   c.rec_seqs = motifs;
   for(i = 0; i < kv_size(observed); i++) {
-    add_map(&c, kv_A(observed, i)->a, kv_size(*kv_A(observed, i)), 1);
+    add_map(&c, i+1, kv_A(observed, i)->a, kv_size(*kv_A(observed, i)), 1);
   }
   c.source = observed_pos;
   return c;

@@ -44,6 +44,7 @@ v |
 #include <time.h>
 #include "klib/kvec.h" // C dynamic vector
 #include "dtw.h"
+#include <immintrin.h> // x86 intrinsics (SSE/AVX vector operations)
 
 #define aln_gt(a,b) ((a).score > (b).score)
 KSORT_INIT(aln_cmp, result, aln_gt)
@@ -53,8 +54,9 @@ KSORT_INIT(aln_cmp, result, aln_gt)
  *
  * First row and column are initialized to zero, and alignment must reach either the last row or column
  */
-result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t ins_score, int8_t del_score, uint32_t neutral_deviation) {
+result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t ins_score, int8_t del_score, float neutral_deviation, int rev) {
   result res;
+  res.qrev = rev;
 
   if(tlen == 0 || qlen == 0) {
     res.failed = 1;
@@ -78,7 +80,7 @@ result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t i
     t_cum_size[i] = (size_t*)malloc((tlen+1) * sizeof(size_t));
   }
 
-  int x, y;
+  int x, y, qy; // qy will be y in fw direction, and qlen-1-y if rev
 
   // initialize first row and first column for local alignment
   for(y = 1; y <= qlen; y++) {
@@ -94,20 +96,20 @@ result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t i
 
   float match, qmatch, tmatch, qtmatch, ins, del; // qmatch and tmatch are different kinds of matches were it accounts for only the extra q_size or t_size
 
-
   for(y = 0; y < qlen; y++) {
+    qy = rev ? qlen-1-y : y;
     for(x = 0; x < tlen; x++) {
       // resetting any negative values to 0 is what makes this local alignment - if you don't do that it will be at least semi-global
-      qtmatch = score_matrix[y][x] + score(q_cum_size[y][x] + query[y], t_cum_size[y][x] + target[x], neutral_deviation) + 0.2;
-      tmatch = score_matrix[y][x] + score(query[y], t_cum_size[y][x] + target[x], neutral_deviation) + 0.1;
-      qmatch = score_matrix[y][x] + score(q_cum_size[y][x] + query[y], target[x], neutral_deviation) + 0.1;
-      match = score_matrix[y][x] + score(query[y], target[x], neutral_deviation);
+      qtmatch = score_matrix[y][x] + score(q_cum_size[y][x] + query[qy], t_cum_size[y][x] + target[x], neutral_deviation) + 0.2;
+      tmatch = score_matrix[y][x] + score(query[qy], t_cum_size[y][x] + target[x], neutral_deviation) + 0.1;
+      qmatch = score_matrix[y][x] + score(q_cum_size[y][x] + query[qy], target[x], neutral_deviation) + 0.1;
+      match = score_matrix[y][x] + score(query[qy], target[x], neutral_deviation);
       // basically, you get a bonus for using the leftover size from skipped fragments, but you don't have to
       match = match > qmatch && match > tmatch && match > qtmatch ? match : (qtmatch > qmatch && qtmatch > tmatch ? qtmatch : (qmatch > tmatch ? qmatch : tmatch));
       ins = score_matrix[y][x+1] + ins_score;
       del = score_matrix[y+1][x] + del_score;
 
-      //printf("%i,%i: match %f, ins %f, del %f, score(%f,%f) %f\n", x, y, match, ins, del, query[y], target[x], score(query[y], target[x], neutral_deviation));
+      //printf("%i,%i: match %f, ins %f, del %f, score(%f,%f) %f\n", x, y, match, ins, del, query[qy], target[x], score(query[qy], target[x], neutral_deviation));
 
       // pick the highest-scoring move to make
       if(match >= ins && match >= del) {
@@ -118,7 +120,7 @@ result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t i
       } else if(ins >= del) {
         score_matrix[y+1][x+1] = ins;
         direction_matrix[y+1][x+1] = INS;
-        q_cum_size[y+1][x+1] = q_cum_size[y][x+1] + query[y];
+        q_cum_size[y+1][x+1] = q_cum_size[y][x+1] + query[qy];
       } else {
         score_matrix[y+1][x+1] = del;
         direction_matrix[y+1][x+1] = DEL;
@@ -196,6 +198,8 @@ result dtw(uint32_t* query, uint32_t* target, size_t qlen, size_t tlen, int8_t i
   for(i = 0; i <= qlen; i++) {
     free(score_matrix[i]);
     free(direction_matrix[i]);
+    free(q_cum_size[i]);
+    free(t_cum_size[i]);
   }
 
   return res;

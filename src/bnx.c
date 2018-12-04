@@ -52,7 +52,7 @@ QX12  349.10  647.47  280.27  379.94  402.39  539.51  992.92  455.53  670.65  50
 // it seems like "LabelChannel" is the first field and is always 0 for the header line and 1 (or higher, I've never seen it?) for the actual label line
 
 int read_bnx_header(FILE *fp, cmap *c) {
-	char buf[1024];
+	char buf[10240];
 	int i, ch;
 	char *val;
 	while ((ch = getc(fp)) != EOF) {
@@ -76,9 +76,10 @@ int read_bnx_header(FILE *fp, cmap *c) {
 		}
 		if(string_begins_with(buf, " Number of Molecules:")) {
       c->n_maps = atoi(get_val(buf));
-      c->map_lengths = malloc(c->n_maps * sizeof(size_t));
-      c->ref_lengths = calloc(c->n_maps, sizeof(size_t));
-      c->labels = malloc(c->n_maps * sizeof(label*));
+      c->molecules = malloc(c->n_maps * sizeof(molecule));
+      for(i = 0; i < c->n_maps; i++) {
+        c->molecules[i].length = 0;
+      }
     }
 	}
   if(c->n_maps <= 0) {
@@ -88,7 +89,7 @@ int read_bnx_header(FILE *fp, cmap *c) {
 	return 0;
 }
 
-int read_bnx_molecule(FILE *fp, cmap *c) {
+int read_bnx_molecule(FILE *fp, cmap *c, int idx) {
   char** parts;
 	char buf[16384];
 	char token_buf[256];
@@ -101,24 +102,26 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
   }
 
   char* ln = strndup(buf, sizeof(buf));
+  if(strcmp(ln, "\n") == 0) return 1; // empty line
   parts = malloc(sizeof(char*) * 20); // always exactly 20 fields in a 0 header line (for version 1.3)
   i = 0;
   char* token;
   token = strtok(ln, delim);
   while(token != NULL) {
     parts[i++] = token;
+    //fprintf(stderr, "%s\t", token);
     token = strtok(NULL, delim);
   }
+  //fprintf(stderr, "\n");
   int nfields = i;
-  assert(nfields == 20);
+  //assert(nfields == 20);
 
   assert(strcmp(parts[0], "0") == 0);
-  int mapid = atoi(parts[1]) - 1;
-  assert(mapid < c->n_maps);
 
-  c->ref_lengths[mapid] = (size_t)atof(parts[2]);
-  c->map_lengths[mapid] = (size_t)atoi(parts[5]) + 1; // actual count is always 1 higher... maybe doesn't count end marker
-  c->labels[mapid] = malloc(c->map_lengths[mapid] * sizeof(label));
+  c->molecules[idx].id = atoi(parts[1]);
+  c->molecules[idx].length = (size_t)atof(parts[2]);
+  c->molecules[idx].n_labels = (size_t)atof(parts[5]) + 1; // actual count is always 1 higher... maybe doesn't count end marker
+  c->molecules[idx].labels = malloc(c->molecules[idx].n_labels * sizeof(label));
   
   // ------ line 1 ------
   if(fgets(buf, sizeof(buf), fp) == NULL) {
@@ -129,12 +132,12 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
   token = strtok(NULL, delim); // first label pos
   i = 0;
   while(token != NULL) {
-    assert(i < c->map_lengths[mapid]);
-    c->labels[mapid][i].position = (uint32_t)atof(token);
-    c->labels[mapid][i].channel = (uint8_t)channel;
-    c->labels[mapid][i].occurrence = 0; // this is not used for molecule data, so it will always be 0
-    c->labels[mapid][i].stdev = 0; // these will be set explicitly for all except the last label
-    c->labels[mapid][i].coverage = 0;
+    assert(i < c->molecules[idx].n_labels);
+    c->molecules[idx].labels[i].position = (uint32_t)atof(token);
+    c->molecules[idx].labels[i].channel = (uint8_t)channel;
+    c->molecules[idx].labels[i].occurrence = 0; // this is not used for molecule data, so it will always be 0
+    c->molecules[idx].labels[i].stdev = 0; // these will be set explicitly for all except the last label
+    c->molecules[idx].labels[i].coverage = 0;
     token = strtok(NULL, delim);
     i++;
   }
@@ -145,12 +148,12 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
     return 1;
   }
   token = strtok(buf, delim); // labelchannel
-  assert(strcmp(token, "QX11") == 0);
+  assert(strcmp(token, "QX11") == 0 || strcmp(token, "QX11\n") == 0);
   token = strtok(NULL, delim); // first label pos
   i = 0;
   while(token != NULL) {
-    assert(i < c->map_lengths[mapid]);
-    c->labels[mapid][i].stdev = (uint32_t)atof(token); // THIS IS SNR, NOT stdev
+    assert(i < c->molecules[idx].n_labels);
+    c->molecules[idx].labels[i].stdev = (uint32_t)atof(token); // THIS IS SNR, NOT stdev
     token = strtok(NULL, delim);
     i++;
   }
@@ -160,12 +163,12 @@ int read_bnx_molecule(FILE *fp, cmap *c) {
     return 1;
   }
   token = strtok(buf, delim); // labelchannel
-  assert(strcmp(token, "QX12") == 0);
+  assert(strcmp(token, "QX12") == 0 || strcmp(token, "QX12\n") == 0);
   token = strtok(NULL, delim); // first label pos
   i = 0;
   while(token != NULL) {
-    assert(i < c->map_lengths[mapid]);
-    c->labels[mapid][i].coverage = (uint32_t)atof(token); // THIS IS Intensity, NOT coverage
+    assert(i < c->molecules[idx].n_labels);
+    c->molecules[idx].labels[i].coverage = (uint32_t)atof(token); // THIS IS Intensity, NOT coverage
     token = strtok(NULL, delim);
     i++;
   }
@@ -192,6 +195,8 @@ int write_bnx(cmap *c, FILE* fp) {
   for(j = 0; j < c->n_rec_seqs; j++) {
     fprintf(fp, "# Nickase Recognition Site %u:\t%s\n", j+1, c->rec_seqs[j]);
   }
+  fprintf(fp, "#rh SourceFolder\tInstrumentSerial\tTime\tNanoChannelPixelsPerScan\tStretchFactor\tBasesPerPixel\tNumberofScans\tChipId\tFlowCell\tSNRFilterType\tMinMoleculeLength\tMinLabelSNR\tRunId\n");
+  fprintf(fp, "# Run Data\t/fake_chip_path\t-\t1970-01-01 12:00:01 AM\t100000000\t1\t500\t1\tchips,fake_chip,Run_fake,0\t1\tdynamic\t15.00\t2.000000\t1\n");
   fprintf(fp, "# Bases per Pixel:\t%u\n", 500);
   fprintf(fp, "# Number of Molecules:\t%u\n", c->n_maps);
   fprintf(fp, "# Min Label SNR:\t%.2f\n", 0);
@@ -206,19 +211,19 @@ int write_bnx(cmap *c, FILE* fp) {
 
   // ScanNumber is always 1, ScanDirection is unknown (-1), GlobalScanNumber is always 1, RunId is always 1
   for(i = 0; i < c->n_maps; i++) {
-    fprintf(fp, "%d\t%d\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t%d\tsim\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", 0, i+1, (float)c->ref_lengths[i], 0.0, 0.0, c->map_lengths[i]-1, i+1, 1, -1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1);
+    fprintf(fp, "%d\t%d\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t%d\tsim\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", 0, c->molecules[i].id, (float)c->molecules[i].length, 0.0, 0.0, c->molecules[i].n_labels-1, i+1, 1, -1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1);
     fprintf(fp, "1");
-    for(k = 0; k < c->map_lengths[i]; k++) {
-      fprintf(fp, "\t%.2f", (float)c->labels[i][k].position);
+    for(k = 0; k < c->molecules[i].n_labels; k++) {
+      fprintf(fp, "\t%.2f", (float)c->molecules[i].labels[k].position);
     }
     // qualities have one fewer than lengths because the end position has a position but no quality
     fprintf(fp, "\nQX11");
-    for(k = 0; k < c->map_lengths[i] - 1; k++) {
-      fprintf(fp, "\t%.2f", (float)c->labels[i][k].stdev);
+    for(k = 0; k < c->molecules[i].n_labels - 1; k++) {
+      fprintf(fp, "\t%.2f", (float)c->molecules[i].labels[k].stdev);
     }
     fprintf(fp, "\nQX12");
-    for(k = 0; k < c->map_lengths[i] - 1; k++) {
-      fprintf(fp, "\t%.2f", (float)c->labels[i][k].coverage);
+    for(k = 0; k < c->molecules[i].n_labels - 1; k++) {
+      fprintf(fp, "\t%.2f", (float)c->molecules[i].labels[k].coverage);
     }
     fprintf(fp, "\n");
   }
@@ -243,7 +248,8 @@ cmap read_bnx(const char *filename) {
 		fclose(fp);
 		return c;
 	}
-	while (read_bnx_molecule(fp, &c) == 0) {
+  int i = 0;
+	while (read_bnx_molecule(fp, &c, i++) == 0) {
     // just looping through the file, reads 4 lines (1 molecule) each time
 	}
 	fclose(fp);

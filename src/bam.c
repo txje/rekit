@@ -112,7 +112,7 @@ cmap get_cmap_from_bam(char* bam_file, int covg_threshold) {
     // put in the end of the chromosome
     kv_push(uint32_t, pos, rlen_array[i]);
 
-    add_map(&c, pos.a, kv_size(pos), 1);
+    add_map(&c, i+1, pos.a, kv_size(pos), 1);
     kv_destroy(pos); // the values were copied to an array of labels, so we can free these positions
   }
 

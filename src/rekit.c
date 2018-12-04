@@ -64,7 +64,7 @@ void usage() {
   //printf("    -e: Seed to random number generator\n");
   printf("    -t: Minimum number of q-gram/cross-ratio anchors in a chain (default: 1)\n");
   printf("    -m: max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored\n");
-  printf("    -d: DTW score threshold to report alignment (default: 0.001)\n");
+  printf("    -d: DTW score threshold to report alignment (default: 5)\n");
   printf("    -x: Simulated molecule coverage\n");
   printf("  simulate options:\n");
   printf("    --break-rate: Probability of genome fragmentation per locus (default: 0.000005)\n");
@@ -76,6 +76,10 @@ void usage() {
   printf("    -s, --source-output: Output the reference positions of the simulated molecules to the given file\n");
   printf("  label options:\n");
   printf("    --coverage-threshold: Read coverage required (in ~300bp window) to call a label site (default: 10)\n");
+  printf("  align options:\n");
+  printf("    --min-labels: Minimum molecule labels to align\n");
+  printf("    --start-mol: Molecule ID to start at (for multithreading)\n");
+  printf("    --end-mol: Molecule ID to end at (inclusive)\n");
 }
 
 static struct option long_options[] = {
@@ -90,6 +94,9 @@ static struct option long_options[] = {
   { "help",                   no_argument,       0, 0 },
   { "source-output",          required_argument, 0, 0 },
   { "bin-size",               required_argument, 0, 0 },
+  { "min-labels",             required_argument, 0, 0 },
+  { "start-mol",              required_argument, 0, 0 },
+  { "end-mol",                required_argument, 0, 0 },
   { 0, 0, 0, 0}
 };
 
@@ -105,11 +112,14 @@ int main(int argc, char *argv[]) {
   int h = 10; // number of hashes
   int verbose = 0;
   int chain_threshold = 1;
-  float dtw_threshold = 0.001;
+  float dtw_threshold = 5;
   int seed = 0; // made this up
   int max_qgrams = 2000000000; // made this up
   int bin_size = 100; // # bins that x-ratios will be spread across, or divisor for fragment size binning
-  int read_limit = 100; // just for testing
+  int read_limit = -1; // just for testing
+  int min_labels = 11; // a parameter, and this works well in practice
+  int start_mol = 0;
+  int end_mol = -1;
 
   float coverage = 0.0;
   int covg_threshold = 10;
@@ -181,6 +191,9 @@ int main(int argc, char *argv[]) {
         else if (long_idx == 7) {usage(); return 0;} // --help
         else if (long_idx == 8) source_outfile = optarg; // --source-output
         else if (long_idx == 9) bin_size = atoi(optarg); // --bin-size
+        else if (long_idx == 10) min_labels = atoi(optarg); // --min-labels
+        else if (long_idx == 11) start_mol = atoi(optarg)-1; // --start-mol, decrement to make it match 0-based indices instead of 1-based in BNX
+        else if (long_idx == 12) end_mol = atoi(optarg)-1; // --end-mol
         break;
       default:
         usage();
@@ -247,59 +260,65 @@ int main(int argc, char *argv[]) {
     }
     FILE* o = stdout;
 
-    printf("# Loading '%s'...\n", bnx_file);
+    fprintf(stderr, "# Loading '%s'...\n", bnx_file);
     time_t t0 = time(NULL);
     cmap b = read_bnx(bnx_file);
     time_t t1 = time(NULL);
-    printf("# Loaded %d molecules in %.2f seconds\n", b.n_maps, (t1-t0));
+    fprintf(stderr, "# Loaded %d molecules in %.2f seconds\n", b.n_maps, (t1-t0));
+    if(end_mol == -1) {
+      end_mol = b.n_maps;
+    }
 
-    printf("# Loading '%s'...\n", cmap_file);
+    fprintf(stderr, "# Loading '%s'...\n", cmap_file);
     t0 = time(NULL);
     cmap c = read_cmap(cmap_file);
     t1 = time(NULL);
-    printf("# Loaded CMAP '%s': %d maps w/%d recognition sites in %.2f seconds\n", cmap_file, c.n_maps, c.n_rec_seqs, t1-t0);
+    fprintf(stderr, "# Loaded CMAP '%s': %d maps w/%d recognition sites in %.2f seconds\n", cmap_file, c.n_maps, c.n_rec_seqs, t1-t0);
 
     int ret;
     if(strcmp(command, "align") == 0)
-      ret = hash_cmap(b, c, o, q, chain_threshold, dtw_threshold, max_qgrams, read_limit, bin_size, min_frag);
+      ret = hash_cmap(b, c, o, q, chain_threshold, dtw_threshold, max_qgrams, read_limit, bin_size, min_frag, min_labels, start_mol, end_mol);
     else { // dtw
 
-      int q, r;
+      int q, r, rv, a;
       result aln;
-      for(q = 0; q < 100; q++) {
-        result* alignments = malloc(c.n_maps * sizeof(result));
-        uint32_t* qfrags = u32_get_fragments(b.labels[q], b.map_lengths[q], 1); // 1 is bin_size (no discretization)
+      for(q = start_mol; q <= end_mol; q++) {
+        if(b.molecules[q].n_labels < min_labels) continue; // enforce minimum molecule labels
+        result* alignments = malloc(c.n_maps * 2 * sizeof(result));
+        uint32_t* qfrags = u32_get_fragments(b.molecules[q].labels, b.molecules[q].n_labels, 1, 0); // 1 is bin_size (no discretization)
         for(r = 0; r < c.n_maps; r++) {
-          uint32_t* rfrags = u32_get_fragments(c.labels[r], c.map_lengths[r], 1);
-          aln = dtw(qfrags, rfrags, b.map_lengths[q], c.map_lengths[r], -1, -1, 1000); // ins_score, del_score, neutral_deviation
-          aln.ref = r;
-          if(aln.failed) {
-            fprintf(stderr, "Alignment failed of query %d to ref %d\n", q, r);
+          uint32_t* rfrags = u32_get_fragments(c.molecules[r].labels, c.molecules[r].n_labels, 1, 0);
+          for(rv = 0; rv <= 1; rv++) {
+            aln = dtw(qfrags, rfrags, b.molecules[q].n_labels, c.molecules[r].n_labels, -1, -1, 0.2, rv); // ins_score, del_score, neutral_deviation
+            aln.ref = r;
+            if(aln.failed) {
+              fprintf(stderr, "Alignment failed of query %d to ref %d\n", q, r);
+            }
+            alignments[r + rv*c.n_maps] = aln;
           }
-          alignments[r] = aln;
         }
 
         // sort alignments by (DTW) score decreasing
         ks_mergesort(aln_cmp, c.n_maps, alignments, 0);
 
-        for(r = 0; r < c.n_maps; r++) {
+        for(r = 0; r < c.n_maps*2; r++) {
           aln = alignments[r];
           if(aln.score < dtw_threshold) break;
-          fprintf(o, "%u\t", q); // query id
-          fprintf(o, "%u\t", aln.ref); // target id
-          fprintf(o, "%u\t", 0); // query reverse?
+          fprintf(o, "%u\t", b.molecules[q].id); // query id
+          fprintf(o, "%u\t", c.molecules[aln.ref].id); // target id
+          fprintf(o, "%u\t", aln.qrev); // query reverse?
           fprintf(o, "%u\t", aln.qstart); // query start idx
           fprintf(o, "%u\t", aln.qend); // query end idx
-          fprintf(o, "%u\t", b.map_lengths[q]); // query len idx
-          fprintf(o, "%u\t", b.labels[q][aln.qstart].position); // query start
-          fprintf(o, "%u\t", b.labels[q][aln.qend > 0 ? aln.qend-1 : 0].position); // query end
-          fprintf(o, "%u\t", b.ref_lengths[q]); // query len
+          fprintf(o, "%u\t", b.molecules[q].n_labels); // query len idx
+          fprintf(o, "%u\t", b.molecules[q].labels[aln.qstart].position); // query start
+          fprintf(o, "%u\t", b.molecules[q].labels[aln.qend > 0 ? aln.qend-1 : 0].position); // query end
+          fprintf(o, "%u\t", b.molecules[q].length); // query len
           fprintf(o, "%u\t", aln.tstart); // ref start idx
           fprintf(o, "%u\t", aln.tend); // ref end idx
-          fprintf(o, "%u\t", c.map_lengths[aln.ref]); // ref len idx
-          fprintf(o, "%u\t", c.labels[aln.ref][aln.tstart].position); // ref start
-          fprintf(o, "%u\t", c.labels[aln.ref][aln.tend > 0 ? aln.tend-1 : 0].position); // ref end
-          fprintf(o, "%u\t", c.ref_lengths[aln.ref]); // ref len
+          fprintf(o, "%u\t", c.molecules[aln.ref].n_labels); // ref len idx
+          fprintf(o, "%u\t", c.molecules[aln.ref].labels[aln.tstart].position); // ref start
+          fprintf(o, "%u\t", c.molecules[aln.ref].labels[aln.tend > 0 ? aln.tend-1 : 0].position); // ref end
+          fprintf(o, "%u\t", c.molecules[aln.ref].length); // ref len
           fprintf(o, "%f\t", aln.score); // dtw score
           // dtw path
           for(i = 0; i < kv_size(aln.path); i++) {
@@ -308,7 +327,7 @@ int main(int argc, char *argv[]) {
           fprintf(o, "\n");
         }
         if(r == 0) {
-          fprintf(o, "%u\t-\t-\t-\t-\t%u\t-\t-\t%u\t-\t-\t-\t-\t-\t-\t-\t-\n", q, b.map_lengths[q], b.ref_lengths[q]);
+          fprintf(o, "%u\t-\t-\t-\t-\t%u\t-\t-\t%u\t-\t-\t-\t-\t-\t-\t-\t-\n", b.molecules[q].id, b.molecules[q].n_labels, b.molecules[q].length);
         }
       }
       ret = 0;

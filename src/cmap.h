@@ -42,11 +42,16 @@ typedef struct label {
   uint16_t occurrence;
 } label;
 
+typedef struct molecule {
+  uint32_t id;
+  size_t n_labels;
+  size_t length;
+  label* labels;
+} molecule;
+
 typedef struct cmap {
-  label** labels; // nested list by ref, then position
+  molecule* molecules;
   size_t n_maps;
-  size_t* ref_lengths;
-  size_t* map_lengths;
   char** rec_seqs;
   size_t n_rec_seqs;
   posVec source;
@@ -59,7 +64,7 @@ int string_begins_with(char* s, char* pre);
 
 int write_cmap(cmap *c, FILE* fp);
 cmap read_cmap(const char* fn);
-int add_map(cmap* c, uint32_t* positions, size_t n_pos, uint8_t channel);
+int add_map(cmap* c, uint32_t molid, uint32_t* positions, size_t n_pos, uint8_t channel);
 void init_cmap(cmap* c);
 
 size_t filter_labels(label* labels, size_t n_labels, label* filtered_labels, int resolution_min);

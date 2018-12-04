@@ -77,18 +77,18 @@ static kh_inline khint_t qgram_hash(uint8_t *s, int k, int skip, uint32_t l) {
   int i, j = 0;
   khint_t h = 0;
   for (i = 0; i < k; i++) {
-    if(i != skip) {
+    //if(i != skip) {
       // l is a bit vector representing whether to ceil (+1) each value
       // if skipping the next label, add the two adjacent sizes together
       //h = (h << 5) - h + (khint_t)*(s+i) + (i+1==skip ? (khint_t)*(s+i+1) : 0) + (l>>j++ & 1);
       h = (h << 5) - h + (khint_t)*(s+i) + (l>>j++ & 1);
-    }
+    //}
   }
   return h;
 }
 
-int hash_cmap(cmap b, cmap c, FILE* o, int q, int chain_threshold, float dtw_threshold, int max_qgrams, int readLimit, int bin_size, int resolution_min);
+int hash_cmap(cmap b, cmap c, FILE* o, int q, int chain_threshold, float dtw_threshold, int max_qgrams, int readLimit, int bin_size, int resolution_min, int min_labels, int start_mol, int end_mol);
 
-uint32_t* u32_get_fragments(label* labels, size_t n_labels, int bin_size);
+uint32_t* u32_get_fragments(label* labels, size_t n_labels, int bin_size, int rev);
 
 #endif /* __HASH_H__ */
