@@ -51,9 +51,9 @@ typedef struct molecule {
 
 typedef struct cmap {
   molecule* molecules;
-  size_t n_maps;
+  uint32_t n_maps;
   char** rec_seqs;
-  size_t n_rec_seqs;
+  uint32_t n_rec_seqs;
   posVec source;
 } cmap;
 
@@ -64,7 +64,7 @@ int string_begins_with(char* s, char* pre);
 
 int write_cmap(cmap *c, FILE* fp);
 cmap read_cmap(const char* fn);
-int add_map(cmap* c, uint32_t molid, uint32_t* positions, size_t n_pos, uint8_t channel);
+int add_map(cmap* c, uint32_t molid, uint32_t* positions, uint32_t n_pos, uint8_t channel);
 void init_cmap(cmap* c);
 
 size_t filter_labels(label* labels, size_t n_labels, label* filtered_labels, int resolution_min);

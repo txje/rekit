@@ -30,6 +30,7 @@
 #include <zlib.h>
 #include "klib/kvec.h"
 #include "digest.h"
+#include "cmap.h"
 
 #ifndef _kseq_
 #define _kseq_
@@ -58,7 +59,6 @@ int digest(char *seq, size_t seq_len, char **motifs, size_t n_motifs, float dige
   }
 
   for(i = 0; i < seq_len; i++) {
-    //printf("At pos %d\n", i);
 
     // see if current locus matches any motifs
     for(m = 0; m < n_motifs; m++) {
@@ -144,13 +144,13 @@ cmap digest_fasta(char* fasta_file, char** motifs, size_t n_motifs) {
   seq = kseq_init(gzfp);
 
   int refid = 1;
+  u32Vec labels;
   while ((l = kseq_read(seq)) >= 0) {
     // name: seq->name.s, seq: seq->seq.s, length: l
-    //printf("Reading %s (%i bp).\n", seq->name.s, l);
-    u32Vec labels;
+    //fprintf(stderr, "Reading %s (%i bp).\n", seq->name.s, l);
     kv_init(labels);
     digest(seq->seq.s, l, motifs, n_motifs, 1.0, 0.0, 1000000000, &labels); // 1.0 true digest rate, 0.0 random shear rate (perfect)
-    //printf("Produced %d labels\n", kv_size(labels));
+    //fprintf(stderr, "Produced %d labels\n", kv_size(labels));
     add_map(&c, refid++, labels.a, kv_size(labels), 1); // channel 1
   }
 

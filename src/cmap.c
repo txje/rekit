@@ -206,10 +206,10 @@ void init_cmap(cmap* c) {
 }
 
 // positions should include the end pos of the chromosome
-int add_map(cmap* c, uint32_t molid, uint32_t* positions, size_t n_pos, uint8_t channel) {
-  int idx = c->n_maps;
+int add_map(cmap* c, uint32_t molid, uint32_t* positions, uint32_t n_pos, uint8_t channel) {
+  uint32_t idx = c->n_maps;
   c->n_maps++;
-  c->molecules = realloc(c->molecules, c->n_maps * sizeof(molecule*));
+  c->molecules = realloc(c->molecules, c->n_maps * sizeof(molecule));
   if(c->molecules == NULL) {
     fprintf(stderr, "Unable to allocate memory\n");
     return 1;
@@ -218,7 +218,7 @@ int add_map(cmap* c, uint32_t molid, uint32_t* positions, size_t n_pos, uint8_t 
   c->molecules[idx].length = positions[n_pos - 1];
   c->molecules[idx].n_labels = n_pos;
   c->molecules[idx].labels = malloc(n_pos * sizeof(label));
-  int i;
+  uint32_t i;
   for(i = 0; i < n_pos; i++) {
     c->molecules[idx].labels[i].position = positions[i];
     if(i < n_pos - 1) {
