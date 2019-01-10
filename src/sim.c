@@ -25,20 +25,6 @@
 /*
  * A tool to simulate Bionano restriction mapping of an input genome (fasta)
  * as realistically as possible
- *
- * This seems like a good place to start: https://github.com/pingchen09990102/BMSIM
- *
- * Their procedure goes as follows:
- * 1. Probabilistic fragmentation at marked "fragile" sites
- * 2. Random fragmentation everywhere else as a homogeneous Poisson process
- * 3. in silico digestion of each fragment
- *    - true labels are a Bernoulli event with probability of success p
- *    - false labels are added as a Poisson process
- * 4. Use stretch scale factor to report sizes of each digested subfragment
- * 5. Chimeras (bi, tri, or quad) are constructed by randomly appending fragments with some probability
- * 6. Use some Gaussian resolution model to decide if close (<~1kb) cut sites are differetiable
- * 7. Assign signal scores to labels? Randomly? (I'm not sure this is strictly necessary)
- * 8. Randomly sample from a huge collection of fragments to achieve the desired coverage
  */
 
 #include <math.h>
@@ -63,6 +49,7 @@ KSEQ_INIT(gzFile, gzread)
 
 KSORT_INIT_GENERIC(uint32_t)
 
+#define PI 3.14159265358979323
 
 void fragment_seq(kstring_t* seq, seqVec* frag_seqs, posVec* frag_positions, uint32_t ref, float frag_prob) {
   uint32_t st = 0, i;
@@ -96,7 +83,7 @@ void fragment_seq(kstring_t* seq, seqVec* frag_seqs, posVec* frag_positions, uin
 
 // from https://en.wikipedia.org/wiki/Box-Muller_transform
 float normal(float mu, float sigma) {
-  const float two_pi = 2.0 * 3.14159265358979323;
+  const float two_pi = 2.0 * PI;
   static float z0, z1;
 
   static uint8_t generate = 0;
@@ -116,8 +103,13 @@ float normal(float mu, float sigma) {
   return z0 * sigma + mu;
 }
 
+// inverse of the Cauchy CDF
+float cauchy(float location, float scale) {
+  return scale * tan(PI * (rand() * (1.0 / RAND_MAX) - 0.5)) + location;
+}
 
-void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float fn_rate, float fp_rate, float stretch_mean, float stretch_std, uint32_t resolution_min) {
+
+void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float fn_rate, float fp_rate, float err_mean, float err_std, uint32_t resolution_min) {
   int i, j, k;
   int nlimit = 100; // break strings of Ns at least 100bp long
   for(i = 0; i < kv_size(seqs); i++) {
@@ -138,7 +130,10 @@ void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float f
     ks_mergesort(uint32_t, kv_size(fp_pos), fp_pos.a, 0); // sort
     k = 0; // index into fp_pos
 
-    // now perform modifications for FN, FP, stretching, and limited resolution
+    // compute per-molecule uniform stretch by observed (query given ref) size / ref
+    float uniform_stretch = (3014.8 + 0.955764 * kv_A(positions, kv_size(positions)-1)) / kv_A(positions, kv_size(positions)-1);
+
+    // now perform modifications for FN, FP, sizing error, and limited resolution
     u32Vec* modpos = (u32Vec*)malloc(sizeof(u32Vec));
     kv_init(*modpos);
     uint32_t last = 0;
@@ -152,8 +147,8 @@ void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float f
       } else {
         val = kv_A(positions, j);
       }
-      // apply normally distributed size variation
-      uint32_t f = last_stretched + (val - last) * normal(stretch_mean, stretch_std);
+      // apply Cauchy-distributed inter-label error
+      uint32_t f = last_stretched + (val - last) * cauchy(err_mean, err_std);
 
       // then include only fragments that exceed some minimum size (typically, ~1kb for Bionano)
       // and fall above FN rate
@@ -181,7 +176,7 @@ void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float f
 }
 
 
-cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_prob, float fn, float fp, float stretch_mean, float stretch_std, uint32_t resolution_min, float coverage) {
+cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_prob, float fn, float fp, float err_mean, float err_std, uint32_t resolution_min, float coverage) {
 
   float bimera_prob = 0.01;
   float trimera_prob = 0.0001;
@@ -220,7 +215,7 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
     for(j = 0; j < coverage*10; j++) {
       frag_seqs.n = 0; // reset the intermediate fragment sequences each round
       fragment_seq(&seq->seq, &frag_seqs, &frag_positions, ref, frag_prob);
-      bn_map(frag_seqs, &fragments, motifs, n_motifs, fn, fp, stretch_mean, stretch_std, resolution_min);
+      bn_map(frag_seqs, &fragments, motifs, n_motifs, fn, fp, err_mean, err_std, resolution_min);
     }
     ref++;
   }

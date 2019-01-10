@@ -68,10 +68,10 @@ void usage() {
   printf("    -x: Simulated molecule coverage\n");
   printf("  simulate options:\n");
   printf("    --break-rate: Probability of genome fragmentation per locus (default: 0.000005)\n");
-  printf("    --fn: Probability of missed label at true restriction site (default: 0.1)\n");
-  printf("    --fp: Probability of false-positive label (default: 0.05)\n");
-  printf("    --stretch-mean: Fragment stretch mean (default: 1.0)\n");
-  printf("    --stretch-std: Fragment stretch standard deviation (default: 0.05)\n");
+  printf("    --fn: Probability of missed label at true restriction site (default: 0.09893)\n");
+  printf("    --fp: Probability of false-positive label (default: 0.07558)\n");
+  printf("    --stretch-mean: Fragment stretch mean (default: 0.991385)\n");
+  printf("    --stretch-std: Fragment stretch standard deviation (default: 0.033733)\n");
   printf("    --min-frag: Minimum detectable fragment size (default: 500)\n");
   printf("    -s, --source-output: Output the reference positions of the simulated molecules to the given file\n");
   printf("  label options:\n");
@@ -124,11 +124,11 @@ int main(int argc, char *argv[]) {
   float coverage = 0.0;
   int covg_threshold = 10;
   float break_rate = 0.000005; // one every 200Kb
-  float fn = 0.1; // 10% false negative (missed) labels
-  float fp = 0.05; // 5% false positive (extra) labels
+  float fn = 0.09893; // based on empirical data for Saphyr DLE1
+  float fp = 0.07558; // based on empirical data
   float min_frag = 500; // minimum reported gap between labels
-  float stretch_mean = 1.0; // no uniform stretch
-  float stretch_std = 0.05; // 5% random (normally distributed) sizing error
+  float stretch_mean = 0.991385; // these are based empirically on Cauchy distribution of NA12878 DLE1 data
+  float stretch_std = 0.033733;
 
   int opt, long_idx;
   opterr = 0;
