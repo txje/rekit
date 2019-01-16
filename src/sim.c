@@ -105,7 +105,14 @@ float normal(float mu, float sigma) {
 
 // inverse of the Cauchy CDF
 float cauchy(float location, float scale) {
-  return scale * tan(PI * (rand() * (1.0 / RAND_MAX) - 0.5)) + location;
+  int r = rand();
+  /*
+  fprintf(stderr, "rand: %d\n", r);
+  fprintf(stderr, "randmax: %d\n", RAND_MAX);
+  fprintf(stderr, "frac: %f\n", (r * (1.0/RAND_MAX)));
+  fprintf(stderr, "tan(...): %f\n", tan(PI * (r * (1.0 / RAND_MAX) - 0.5)));
+  */
+  return scale * tan(PI * (r * (1.0 / RAND_MAX) - 0.5)) + location;
 }
 
 
@@ -131,13 +138,15 @@ void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float f
     k = 0; // index into fp_pos
 
     // compute per-molecule uniform stretch by observed (query given ref) size / ref
-    float uniform_stretch = (3014.8 + 0.955764 * kv_A(positions, kv_size(positions)-1)) / kv_A(positions, kv_size(positions)-1);
+    float uniform_stretch = (3014.8 + 0.955764 * kv_A(positions, kv_size(positions)-1)) * normal(1.03025, 0.03273) / kv_A(positions, kv_size(positions)-1);
+    //fprintf(stderr, "\nuniform stretch factor: %f\n", uniform_stretch);
 
     // now perform modifications for FN, FP, sizing error, and limited resolution
     u32Vec* modpos = (u32Vec*)malloc(sizeof(u32Vec));
     kv_init(*modpos);
     uint32_t last = 0;
     uint32_t last_stretched = 0;
+    //fprintf(stderr, "%d labels\n", kv_size(positions));
     for(j = 0; j < kv_size(positions); j++) {
       uint32_t val;
       if(k < kv_size(fp_pos) && kv_A(fp_pos, k) < kv_A(positions, j)) {
@@ -148,7 +157,13 @@ void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float f
         val = kv_A(positions, j);
       }
       // apply Cauchy-distributed inter-label error
-      uint32_t f = last_stretched + (val - last) * cauchy(err_mean, err_std);
+      float c = cauchy(err_mean, err_std);
+      while(c < 0) c = cauchy(err_mean, err_std); // under some error parameters, a proper cauchy random variable will end up with negative values, which we can't allow
+      uint32_t f = last_stretched + (val - last) * uniform_stretch * c;
+      if(c < 0 || f < last_stretched) {
+        fprintf(stderr, "cauchy: %f\n", c);
+        fprintf(stderr, "label %d orig dist: %u, new dist: %u\n", j, val-last, f-last_stretched);
+      }
 
       // then include only fragments that exceed some minimum size (typically, ~1kb for Bionano)
       // and fall above FN rate
