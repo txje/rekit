@@ -24,8 +24,6 @@ but have been significantly modified.
 Requirements
 ------------
 
-These need to be anywhere that the header and library files can be found by your compiler
-
   * zlib (https://zlib.net/)
   * htslib (https://github.com/samtools/htslib)
 
@@ -37,7 +35,6 @@ Installation
     git clone https://github.com/attractivechaos/klib
     cd ..
     make
-
 
 Usage
 -----
@@ -64,16 +61,23 @@ Usage
         -m: max_qgram_hits: Maximum occurrences of a q-gram before it is considered repetitive and ignored
         -d: DTW score threshold to report alignment (default: 0.001)
         -x: Simulated molecule coverage
-      simulate options:
+      simulate options (defaults based on empirical Saphyr data):
         --break-rate: Probability of genome fragmentation per locus (default: 0.000005)
-        --fn: Probability of missed label at true restriction site (default: 0.1)
-        --fp: Probability of false-positive label (default: 0.05)
-        --stretch-mean: Fragment stretch mean (default: 1.0)
-        --stretch-std: Fragment stretch standard deviation (default: 0.05)
+        --fn: Probability of missed label at true restriction site (default: 0.09893)
+        --fp: Probability of false-positive label (default: 0.07558)
+        --stretch-mean: Fragment stretch mean (default: 0.991385)
+        --stretch-std: Fragment stretch standard deviation (default: 0.033733)
         --min-frag: Minimum detectable fragment size (default: 500)
         -s, --source-output: Output the reference positions of the simulated molecules to the given file
       label options:
         --coverage-threshold: Read coverage required (in ~300bp window) to call a label site (default: 10)
+
+Simulation Example
+------------------
+
+To simulate 100x coverage from a reference genome (fasta) using the DLE-1 recognition site:
+
+    rekit simulate -f <fasta> -r CTTAAG -x 100 -s <output_truth> > <output_bnx>
 
 Output
 ------
