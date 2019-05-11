@@ -101,6 +101,7 @@ static struct option long_options[] = {
 };
 
 int main(int argc, char *argv[]) {
+  srand(time(NULL));
 
   char* bnx_file = NULL; // .bnx file path/name
   char* fasta_file = NULL; // .fasta file path/name
@@ -231,6 +232,12 @@ int main(int argc, char *argv[]) {
     if(restriction_seq == NULL) {
       fprintf(stderr, "Restriction sequence is required (-r)\n");
       return 1;
+    } else {
+      fprintf(stderr, "recognition seq is '%s'\n", restriction_seq);
+      if(strcmp(restriction_seq, "DLE1") == 0 || strcmp(restriction_seq, "DLE-1") == 0) {
+        fprintf(stderr, "setting recognition seq to CTTAAG\n");
+        restriction_seq = "CTTAAG";
+      }
     }
     // make a list of restriction seqs - that's what digest wants
     char** rseqs = malloc(1 * sizeof(char*));
@@ -344,6 +351,10 @@ int main(int argc, char *argv[]) {
     if(restriction_seq == NULL) {
       fprintf(stderr, "Restriction sequence is required (-r)\n");
       return 1;
+    } else {
+      if(strcmp(restriction_seq, "DLE1") == 0 || strcmp(restriction_seq, "DLE-1") == 0) {
+        restriction_seq = "CTTAAG";
+      }
     }
     if(coverage < FLT_EPSILON) {
       fprintf(stderr, "Coverage is required (-x)\n");
@@ -355,6 +366,7 @@ int main(int argc, char *argv[]) {
 
     fprintf(stderr, "-- Running optical mapping simulation --\n");
     c = simulate_bnx(fasta_file, rseqs, 1, break_rate, fn, fp, stretch_mean, stretch_std, min_frag, coverage);
+    fprintf(stderr, "Done simulating, writing to BNX...\n");
     ret = write_bnx(&c, stdout);
 
     if(source_outfile != NULL) {

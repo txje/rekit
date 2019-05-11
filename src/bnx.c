@@ -219,11 +219,11 @@ int write_bnx(cmap *c, FILE* fp) {
     // qualities have one fewer than lengths because the end position has a position but no quality
     fprintf(fp, "\nQX11");
     for(k = 0; k < c->molecules[i].n_labels - 1; k++) {
-      fprintf(fp, "\t%.2f", (float)c->molecules[i].labels[k].stdev);
+      fprintf(fp, "\t%.2f", 50.0); //(float)c->molecules[i].labels[k].stdev); // stdev is usually 0 for in silico digestions and simulations, but Refaligner uses this as SNR - 50 is an unambiguously good value
     }
     fprintf(fp, "\nQX12");
     for(k = 0; k < c->molecules[i].n_labels - 1; k++) {
-      fprintf(fp, "\t%.2f", (float)c->molecules[i].labels[k].coverage);
+      fprintf(fp, "\t%.2f", 5.0); //(float)c->molecules[i].labels[k].coverage); // same - 5 is a high Intensity value if Refaligner wants to filter on this
     }
     fprintf(fp, "\n");
   }

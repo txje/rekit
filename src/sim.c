@@ -51,35 +51,6 @@ KSORT_INIT_GENERIC(uint32_t)
 
 #define PI 3.14159265358979323
 
-void fragment_seq(kstring_t* seq, seqVec* frag_seqs, posVec* frag_positions, uint32_t ref, float frag_prob) {
-  uint32_t st = 0, i;
-  // this can be sped up dramatically by picking break sites from a distribution instead of testing site by site
-  for(i = 1; i < seq->l; i++) {
-    if(rand() * (1.0 / RAND_MAX) < frag_prob) {
-      // we'll actually just return each fragment string as a pointer and length into the reference sequence - remember this.
-      kstring_t* frag_seq = malloc(sizeof(kstring_t));
-      frag_seq->l = frag_seq->m = i-st;
-      frag_seq->s = seq->s+st;
-      //printf("added sequence of length %d\n", frag_seq->l);
-      kv_push(kstring_t*, *frag_seqs, frag_seq);
-      ref_pos rp;
-      rp.ref_id = ref;
-      rp.pos = st;
-      kv_push(ref_pos, *frag_positions, rp);
-      st = i;
-    }
-  }
-  // last section
-  kstring_t* frag_seq = malloc(sizeof(kstring_t));
-  frag_seq->l = frag_seq->m = i-st;
-  frag_seq->s = seq->s+st;
-  kv_push(kstring_t*, *frag_seqs, frag_seq);
-  ref_pos rp;
-  rp.ref_id = ref;
-  rp.pos = st;
-  kv_push(ref_pos, *frag_positions, rp);
-}
-
 
 // from https://en.wikipedia.org/wiki/Box-Muller_transform
 float normal(float mu, float sigma) {
@@ -115,79 +86,69 @@ float cauchy(float location, float scale) {
   return scale * tan(PI * (r * (1.0 / RAND_MAX) - 0.5)) + location;
 }
 
-
-void bn_map(seqVec seqs, fragVec* frags, char **motifs, size_t n_motifs, float fn_rate, float fp_rate, float err_mean, float err_std, uint32_t resolution_min) {
+u32Vec* bn_map(char* seq, uint32_t seqlen, char **motifs, size_t n_motifs, float fn_rate, float fp_rate, float err_mean, float err_std, uint32_t resolution_min) {
   int i, j, k;
   int nlimit = 100; // break strings of Ns at least 100bp long
-  for(i = 0; i < kv_size(seqs); i++) {
-    kstring_t* seq = kv_A(seqs, i);
 
-    // do digestion + shearing with some probability
-    u32Vec positions;
-    kv_init(positions);
-    int res = digest(seq->s, seq->l, motifs, n_motifs, 1, 0, nlimit, &positions);
-    //fprintf(stderr, "molecule %d of %d (%d bp) has %d labels\n", i, kv_size(seqs), seq->l, kv_size(positions));
+  // do digestion + shearing with some probability
+  u32Vec positions;
+  kv_init(positions);
+  int res = digest(seq, seqlen, motifs, n_motifs, 1, 0, nlimit, &positions);
 
-    int fp = round(kv_size(positions) * normal(fp_rate, 0.01));
-    u32Vec fp_pos;
-    kv_init(fp_pos);
-    for(j = 0; j < fp; j++) {
-      kv_push(uint32_t, fp_pos, (uint32_t)round((double)rand() / (double)RAND_MAX * kv_A(positions, kv_size(positions)-1)));
-    }
-    ks_mergesort(uint32_t, kv_size(fp_pos), fp_pos.a, 0); // sort
-    k = 0; // index into fp_pos
-
-    // compute per-molecule uniform stretch by observed (query given ref) size / ref
-    float uniform_stretch = (3014.8 + 0.955764 * kv_A(positions, kv_size(positions)-1)) * normal(1.03025, 0.03273) / kv_A(positions, kv_size(positions)-1);
-    //fprintf(stderr, "\nuniform stretch factor: %f\n", uniform_stretch);
-
-    // now perform modifications for FN, FP, sizing error, and limited resolution
-    u32Vec* modpos = (u32Vec*)malloc(sizeof(u32Vec));
-    kv_init(*modpos);
-    uint32_t last = 0;
-    uint32_t last_stretched = 0;
-    //fprintf(stderr, "%d labels\n", kv_size(positions));
-    for(j = 0; j < kv_size(positions); j++) {
-      uint32_t val;
-      if(k < kv_size(fp_pos) && kv_A(fp_pos, k) < kv_A(positions, j)) {
-        val = kv_A(fp_pos, k);
-        k++;
-        j--;
-      } else {
-        val = kv_A(positions, j);
-      }
-      // apply Cauchy-distributed inter-label error
-      float c = cauchy(err_mean, err_std);
-      while(c < 0) c = cauchy(err_mean, err_std); // under some error parameters, a proper cauchy random variable will end up with negative values, which we can't allow
-      uint32_t f = last_stretched + (val - last) * uniform_stretch * c;
-      if(c < 0 || f < last_stretched) {
-        fprintf(stderr, "cauchy: %f\n", c);
-        fprintf(stderr, "label %d orig dist: %u, new dist: %u\n", j, val-last, f-last_stretched);
-      }
-
-      // then include only fragments that exceed some minimum size (typically, ~1kb for Bionano)
-      // and fall above FN rate
-      if(((double)rand() / (double)RAND_MAX) > fn_rate) {
-        if(kv_size(*modpos) == 0 || f - last_stretched >= resolution_min) {
-          kv_push(uint32_t, *modpos, f);
-        } else { // if this label is too close to the last, use only the midpoint of the two
-          kv_A(*modpos, kv_size(*modpos)-1) = last_stretched + (f - last_stretched) / 2;
-        }
-      }
-
-      last = val;
-      last_stretched = f;
-    }
-
-    kv_push(u32Vec*, *frags, modpos);
-    kv_destroy(positions);
-
-    /*
-    for(j = 0; j < kv_size(*modpos); j++)
-      printf("%d\t", kv_A(*modpos, j));
-    printf("\n");
-    */
+  int fp = round(kv_size(positions) * normal(fp_rate, 0.01));
+  u32Vec fp_pos;
+  kv_init(fp_pos);
+  for(j = 0; j < fp; j++) {
+    kv_push(uint32_t, fp_pos, (uint32_t)round((double)rand() / (double)RAND_MAX * kv_A(positions, kv_size(positions)-1)));
   }
+  ks_mergesort(uint32_t, kv_size(fp_pos), fp_pos.a, 0); // sort
+  k = 0; // index into fp_pos
+
+  // compute per-molecule uniform stretch by observed (query given ref) size / ref
+  float uniform_stretch = (3014.8 + 0.955764 * kv_A(positions, kv_size(positions)-1)) * normal(1.03025, 0.03273) / kv_A(positions, kv_size(positions)-1);
+  //fprintf(stderr, "\nuniform stretch factor: %f\n", uniform_stretch);
+
+  // now perform modifications for FN, FP, sizing error, and limited resolution
+  u32Vec* modpos = (u32Vec*)malloc(sizeof(u32Vec));
+  kv_init(*modpos);
+  uint32_t last = 0;
+  uint32_t last_stretched = 0;
+  //fprintf(stderr, "%d labels\n", kv_size(positions));
+  for(j = 0; j < kv_size(positions); j++) {
+    uint32_t val;
+    if(k < kv_size(fp_pos) && kv_A(fp_pos, k) < kv_A(positions, j)) {
+      val = kv_A(fp_pos, k);
+      k++;
+      j--;
+    } else {
+      val = kv_A(positions, j);
+    }
+    // apply Cauchy-distributed inter-label error
+    float c = cauchy(err_mean, err_std);
+    while(c < 0) c = cauchy(err_mean, err_std); // under some error parameters, a proper cauchy random variable will end up with negative values, which we can't allow
+    uint32_t f = last_stretched + (val - last) * uniform_stretch * c;
+    if(c < 0 || f < last_stretched) {
+      fprintf(stderr, "cauchy: %f\n", c);
+      fprintf(stderr, "label %d orig dist: %u, new dist: %u\n", j, val-last, f-last_stretched);
+    }
+
+    // then include only fragments that exceed some minimum size (typically, ~1kb for Bionano)
+    // and fall above FN rate
+    if(((double)rand() / (double)RAND_MAX) > fn_rate || j == kv_size(positions)-1) { // this last position is the end of the molecule and can't be FN
+      if(kv_size(*modpos) == 0 || f - last_stretched >= resolution_min) {
+        kv_push(uint32_t, *modpos, f);
+      } else { // if this label is too close to the last, use only the midpoint of the two
+        kv_A(*modpos, kv_size(*modpos)-1) = last_stretched + (f - last_stretched) / 2;
+      }
+    }
+
+    last = val;
+    last_stretched = f;
+  }
+
+  kv_destroy(positions);
+
+  return modpos;
 }
 
 
@@ -196,8 +157,6 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   float bimera_prob = 0.01;
   float trimera_prob = 0.0001;
   float quadramera_prob = 0.000001;
-
-  srand(time(NULL));
 
   gzFile f;
   kseq_t* seq;
@@ -211,13 +170,18 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   kv_init(fragments);
   posVec frag_positions;
   kv_init(frag_positions);
-  seqVec frag_seqs;
-  kv_init(frag_seqs);
+
+  seqVec ref_seqs;
+  kv_init(ref_seqs);
+  u32Vec ref_lens;
+  kv_init(ref_lens);
+
+  cstrVec ref_names;
+  kv_init(ref_names);
 
   f = gzopen(ref_fasta, "r");
   seq = kseq_init(f);
-  fprintf(stderr, "Fasta file: %s\n", ref_fasta);
-  fprintf(stderr, "Fragmenting and digesting up to %fx coverage\n", coverage*10);
+  fprintf(stderr, "Loading FASTA file: %s\n", ref_fasta);
 
   int l;
   uint32_t ref = 0; // reference seq ID
@@ -226,85 +190,115 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
     //fprintf(stderr, "Reading sequence '%s' (%i bp).\n", seq->name.s, l);
     genome_size = genome_size + seq->seq.l;
 
-    // digest 10x as many genomes as the coverage we want, then we'll sample down
-    for(j = 0; j < coverage*10; j++) {
-      frag_seqs.n = 0; // reset the intermediate fragment sequences each round
-      fragment_seq(&seq->seq, &frag_seqs, &frag_positions, ref, frag_prob);
-      bn_map(frag_seqs, &fragments, motifs, n_motifs, fn, fp, err_mean, err_std, resolution_min);
-    }
+    char* s = malloc((l+1)*sizeof(char));
+    s[l] = '\0';
+    strncpy(s, seq->seq.s, l);
+    char* n = malloc((seq->name.l+1)*sizeof(char));
+    n[seq->name.l] = '\0';
+    strncpy(n, seq->name.s, seq->name.l);
+    kv_push(char*, ref_names, n);
+    kv_push(char*, ref_seqs, s);
+    kv_push(uint32_t, ref_lens, seq->seq.l); // I think this comes as a size_t, hopefully it will cast quietly...
+
     ref++;
   }
   kseq_destroy(seq);
-  kv_destroy(frag_seqs);
   gzclose(f);
-  
-  // sample randomly down to the requested coverage, include chimeras
-  // bimera_prob, trimera_prob, quadramera_prob
-  fragVec observed;
-  kv_init(observed);
-  posVec observed_pos;
-  kv_init(observed_pos);
-  size_t f0, f1;
+
   uint64_t target_coverage = (uint64_t)((double)coverage * genome_size);
-  //fprintf(stderr, "Sampling and chimerizing down to %fx coverage (~%u bp)\n", coverage, target_coverage);
-  for(i = 0; i < target_coverage; ) {
-    double chimera_prob = (double)rand() / (double)RAND_MAX;
-    int chimera = (chimera_prob < quadramera_prob ? 4 : (chimera_prob < trimera_prob ? 3 : (chimera_prob < bimera_prob ? 2 : 1)));
+  uint64_t tot_covg = 0;
+  fprintf(stderr, "Target bp: %llu (%fx coverage of %u bp genome)\n", target_coverage, coverage, genome_size);
+  double chimera_prob;
+  int chimera_parts = 0;
+  u32Vec* prev_f;
+  uint64_t bigrand;
+  uint32_t ref_id;
+  uint64_t pos;
+  uint32_t frag_len;
+  uint32_t last;
+  uint32_t tmp;
 
-    // sample without replacement
-    // this will never slow down too much since we created 10x as many as we'll ever sample
-    do {
-      f0 = (size_t)(rand() * (1.0 / RAND_MAX) * kv_size(fragments));
-    } while(kv_A(fragments, f0) == NULL || kv_size(*kv_A(fragments, f0)) <= 0); // keep trying if this fragment was already sampled or has no labels
-
-    // append as many other fragments as the chimerism calls for
-    while(chimera > 1) {
-      do {
-        f1 = rand() * (1.0 / RAND_MAX) * kv_size(fragments);
-      } while(f1 == f0 || kv_A(fragments, f1) == NULL); // this will never slow down too much since we created 10x as many as we'll ever sample
-
-      // shift all of the f1 positions over to append to f0
-      uint32_t last = kv_A(*kv_A(fragments, f0), kv_size(*kv_A(fragments, f0))-1);
-      for(j = 0; j < kv_size(*kv_A(fragments, f1)); j++) {
-        kv_push(uint32_t, *kv_A(fragments, f0), kv_A(*kv_A(fragments, f1), j) + last);
+  for(tot_covg = 0; tot_covg < target_coverage; ) {
+    bigrand = rand(); // proof ourselves against 32-bit systems where our rand() will not necessarily be big enough 
+    bigrand = (bigrand << 32) | rand();
+    pos = bigrand % genome_size;
+    //fprintf(stderr, "raw pos %lu\n", pos);
+    for(i = 0; i < ref; i++) {
+      if(pos < kv_A(ref_lens, i)) {
+        ref_id = i;
+        break;
+      } else {
+        pos = pos - kv_A(ref_lens, i);
+        //fprintf(stderr, "skipping over ref %u of size %u\n", i, kv_A(ref_lens, i));
       }
+    }
+    //fprintf(stderr, "ref %u, pos %lu\n", ref_id, pos);
+    ref_pos rp = {ref_id, (uint32_t)pos};
+    frag_len = log(1 - (double)rand()/(double)RAND_MAX) / log(1 - frag_prob);
+    //fprintf(stderr, "fragment length: %u\n", frag_len);
+    if(pos + frag_len > kv_A(ref_lens, ref_id))
+      frag_len = kv_A(ref_lens, ref_id) - pos;
+    u32Vec *f = bn_map(kv_A(ref_seqs, ref_id)+pos, frag_len, motifs, n_motifs, fn, fp, err_mean, err_std, resolution_min);
+    //fprintf(stderr, "mapping done, got %u fragments\n", kv_size(*f));
 
-      kv_destroy(*kv_A(fragments, f1));
-      kv_A(fragments, f1) = NULL;
-      chimera--;
+    // reverse fragments randomly to represent opposite strand (labels are already strand-agnostic)
+    if(rand()%2 == 0) {
+      for(i = 0; i < kv_size(*f)/2; i++) {
+        tmp = kv_A(*f, i);
+        kv_A(*f, i) = kv_A(*f, kv_size(*f)-1-i);
+        kv_A(*f, kv_size(*f)-1-i) = tmp;
+      }
     }
 
-    /*
-    printf("%d\t", chimera);
-    for(j = 0; j < kv_size(*kv_A(fragments, f0)); j++)
-      printf("%d\t", kv_A(*kv_A(fragments, f0), j));
-    printf("\n");
-    */
+    // apply chimerism
+    if(chimera_parts == 0) {
+      //fprintf(stderr, "new chimera check\n");
+      chimera_prob = (double)rand() / (double)RAND_MAX;
+      chimera_parts = (chimera_prob < quadramera_prob ? 4 : (chimera_prob < trimera_prob ? 3 : (chimera_prob < bimera_prob ? 2 : 1)));
+      //fprintf(stderr, "  chimera parts: %d\n", chimera_parts);
 
-    kv_push(u32Vec*, observed, kv_A(fragments, f0));
-    kv_push(ref_pos, observed_pos, kv_A(frag_positions, f0)); // does not record the other parts (if any) of a chimera
+      kv_push(ref_pos, frag_positions, rp); // does not record the other parts (if any) of a chimera
+      if(chimera_parts == 1) { // normal, never chimeric
+        //fprintf(stderr, "  pushing singleton\n");
+        kv_push(u32Vec*, fragments, f);
+        chimera_parts = 0;
+      } else {
+        //fprintf(stderr, "  beginning of new chimera\n");
+        prev_f = f;
+        chimera_parts--;
+      }
+    } else {
+      //fprintf(stderr, "  adding part %d to chimera\n", chimera_parts);
+      // shift all of the f1 positions over to append to f0
+      last = kv_A(*prev_f, kv_size(*prev_f)-1); // largest value
+      for(j = 0; j < kv_size(*f); j++) {
+        kv_push(uint32_t, *prev_f, kv_A(*f, j) + last);
+      }
 
-    // add to our running coverage
-    size_t f0_size = kv_size(*kv_A(fragments, f0));
-    i += kv_A(*kv_A(fragments, f0), kv_size(*kv_A(fragments, f0))-1);
+      kv_destroy(*f);
+      free(f);
+      if(chimera_parts == 1)
+        kv_push(u32Vec*, fragments, prev_f);
+      chimera_parts--;
+    }
 
-    kv_A(fragments, f0) = NULL; // but we can clear the pointer so that it's not sampled again
+    tot_covg = tot_covg + frag_len;
+    //fprintf(stderr, "-- running total: %u of %u\n", tot_covg, target_coverage);
   }
 
-  // clean up unsampled fragments
-  for(i = 0; i < kv_size(fragments); i++)
-    if(kv_A(fragments, i) != NULL)
-      kv_destroy(*kv_A(fragments, i));
-  kv_destroy(frag_positions);
-  kv_destroy(fragments);
+  // if last was an incomplete chimera, just end it and add it
+  if(chimera_parts > 0)
+    kv_push(u32Vec*, fragments, prev_f);
 
   cmap c;
   init_cmap(&c);
   c.n_rec_seqs = n_motifs;
   c.rec_seqs = motifs;
-  for(i = 0; i < kv_size(observed); i++) {
-    add_map(&c, i+1, kv_A(observed, i)->a, kv_size(*kv_A(observed, i)), 1);
+  fprintf(stderr, "Sampled %u fragments\n", kv_size(fragments));
+  for(i = 0; i < kv_size(fragments); i++) {
+    //fprintf(stderr, "adding map %d of size %u\n", i, kv_size(*kv_A(fragments, i)));
+    add_map(&c, i+1, kv_A(fragments, i)->a, kv_size(*kv_A(fragments, i)), 1);
   }
-  c.source = observed_pos;
+  c.source = frag_positions;
   return c;
 }

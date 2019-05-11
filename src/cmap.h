@@ -11,7 +11,8 @@ typedef kvec_t(uint8_t) byteVec;
 typedef kvec_t(uint32_t) u32Vec;
 typedef kvec_t(u32Vec*) fragVec;
 
-typedef kvec_t(kstring_t*) seqVec;
+typedef kvec_t(char*) seqVec;
+typedef kvec_t(char*) cstrVec;
 
 typedef struct ref_pos {
   uint32_t ref_id;

@@ -43,18 +43,41 @@ KSEQ_INIT(gzFile, gzread)
 #endif
 
 int digest(char *seq, size_t seq_len, char **motifs, size_t n_motifs, float digest_rate, float shear_rate, int nlimit, u32Vec *positions) {
-  srand(time(NULL));
 
   // go through sequence
   int i, j, m;
 
-  // create a crazy triple ref holder for kmer/rc as we loop through the sequence
-  char ***mers = malloc(sizeof(char**) * 2); // fw and rc
-  for(i = 0; i < 2; i++) {
-    mers[i] = (char**) malloc(sizeof(char*) * n_motifs);
-    for(m = 0; m < n_motifs; m++) {
-      mers[i][m] = (char*) malloc(sizeof(char) * (strlen(motifs[m]) + 1));
-      mers[i][m][strlen(motifs[m])] = '\0';
+  int *lens = malloc(n_motifs * sizeof(int));
+  for(i = 0; i < n_motifs; i++) {
+    lens[i] = strlen(motifs[i]);
+  }
+
+  char **rc_motifs = malloc(n_motifs * sizeof(char*));
+  for(i = 0; i < n_motifs; i++) {
+    rc_motifs[i] = malloc(lens[i]+1 * sizeof(char));
+    rc_motifs[i][lens[i]] = '\0';
+    for(j = 0; j < lens[i]; j++) {
+      switch(motifs[i][j]){
+        case 'A':
+        case 'a':
+          rc_motifs[i][lens[i]-1-j] = 'T';
+          break;
+        case 'C':
+        case 'c':
+          rc_motifs[i][lens[i]-1-j] = 'G';
+          break;
+        case 'G':
+        case 'g':
+          rc_motifs[i][lens[i]-1-j] = 'C';
+          break;
+        case 'T':
+        case 't':
+          rc_motifs[i][lens[i]-1-j] = 'A';
+          break;
+        default:
+          rc_motifs[i][lens[i]-1-j] = 'N';
+          break;
+      }
     }
   }
 
@@ -62,59 +85,8 @@ int digest(char *seq, size_t seq_len, char **motifs, size_t n_motifs, float dige
 
     // see if current locus matches any motifs
     for(m = 0; m < n_motifs; m++) {
-      size_t mlen = strlen(motifs[m]);
-      if(i+mlen >= seq_len) {
-        // not enough sequence left to match this motif
-        continue;
-      }
-
-      // get kmer and reverse-complement to compare
-      for(j = 0; j < mlen; j++) {
-        switch(seq[i+j]){
-          case 'A':
-          case 'a':
-            mers[0][m][j] = 'A';
-            mers[1][m][mlen-j-1] = 'T';
-            break;
-          case 'C':
-          case 'c':
-            mers[0][m][j] = 'C';
-            mers[1][m][mlen-j-1] = 'G';
-            break;
-          case 'G':
-          case 'g':
-            mers[0][m][j] = 'G';
-            mers[1][m][mlen-j-1] = 'C';
-            break;
-          case 'T':
-          case 't':
-            mers[0][m][j] = 'T';
-            mers[1][m][mlen-j-1] = 'A';
-            break;
-          case 'N':
-          case 'n':
-            mers[0][m][j] = 'N';
-            mers[1][m][mlen-j-1] = 'N';
-            break;
-          default:
-            fprintf(stderr, "Warning: Invalid character encountered at seq pos %d: %c\n", i+j, seq[i+j]);
-            mers[0][m][j] = 'N';
-            mers[1][m][mlen-j-1] = 'N';
-        }
-      }
-      //printf("Comparing %s and %s (rc) to motif %s (%dbp)\n", mers[0][m], mers[1][m], motifs[m], mlen);
-
-      /*
-      float digest_chance = (double)rand() / (double)RAND_MAX;
-      float shear_chance = (double)rand() / (double)RAND_MAX;
-      //printf("Random number %f < rate %f?\n", rnd, digest_rate);
-      if(shear_chance < shear_rate || ((strcmp(motifs[m], mers[0][m]) == 0 || strcmp(motifs[m], mers[1][m]) == 0) && digest_chance <= digest_rate)) {
-        kv_push(uint32_t, *positions, (uint32_t)i);
-        break; // stop checking motifs
-      }
-      */
       // do a perfect digestion - ignores FP and FN
-      if (strcmp(motifs[m], mers[0][m]) == 0 || strcmp(motifs[m], mers[1][m]) == 0) {
+      if (strncmp(motifs[m], seq+i, lens[m]) == 0 || strncmp(rc_motifs[m], seq+i, lens[m]) == 0) {
         kv_push(uint32_t, *positions, (uint32_t)i);
         break;
       }
