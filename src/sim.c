@@ -86,26 +86,21 @@ float cauchy(float location, float scale) {
   return scale * tan(PI * (r * (1.0 / RAND_MAX) - 0.5)) + location;
 }
 
-u32Vec* bn_map(char* seq, uint32_t seqlen, char **motifs, size_t n_motifs, float fn_rate, float fp_rate, float err_mean, float err_std, uint32_t resolution_min) {
-  int i, j, k;
-  int nlimit = 100; // break strings of Ns at least 100bp long
+// end_idx is *not included* itself
+u32Vec* bn_map(u32Vec *positions, int start_idx, int end_idx, uint64_t start_pos, uint32_t frag_len, float fn_rate, float fp_rate, float err_mean, float err_std, uint32_t resolution_min) {
+  int j, k;
 
-  // do digestion + shearing with some probability
-  u32Vec positions;
-  kv_init(positions);
-  int res = digest(seq, seqlen, motifs, n_motifs, 1, 0, nlimit, &positions);
-
-  int fp = round(kv_size(positions) * normal(fp_rate, 0.01));
+  int fp = round((end_idx - start_idx) * normal(fp_rate, 0.01));
   u32Vec fp_pos;
   kv_init(fp_pos);
   for(j = 0; j < fp; j++) {
-    kv_push(uint32_t, fp_pos, (uint32_t)round((double)rand() / (double)RAND_MAX * kv_A(positions, kv_size(positions)-1)));
+    kv_push(uint32_t, fp_pos, (uint32_t)round((double)rand() / (double)RAND_MAX * frag_len));
   }
   ks_mergesort(uint32_t, kv_size(fp_pos), fp_pos.a, 0); // sort
   k = 0; // index into fp_pos
 
   // compute per-molecule uniform stretch by observed (query given ref) size / ref
-  float uniform_stretch = (3014.8 + 0.955764 * kv_A(positions, kv_size(positions)-1)) * normal(1.03025, 0.03273) / kv_A(positions, kv_size(positions)-1);
+  float uniform_stretch = (3014.8 + 0.955764 * frag_len) * normal(1.03025, 0.03273) / frag_len;
   //fprintf(stderr, "\nuniform stretch factor: %f\n", uniform_stretch);
 
   // now perform modifications for FN, FP, sizing error, and limited resolution
@@ -113,28 +108,27 @@ u32Vec* bn_map(char* seq, uint32_t seqlen, char **motifs, size_t n_motifs, float
   kv_init(*modpos);
   uint32_t last = 0;
   uint32_t last_stretched = 0;
-  //fprintf(stderr, "%d labels\n", kv_size(positions));
-  for(j = 0; j < kv_size(positions); j++) {
+  for(j = start_idx; j <= end_idx; j++) {
     uint32_t val;
-    if(k < kv_size(fp_pos) && kv_A(fp_pos, k) < kv_A(positions, j)) {
-      val = kv_A(fp_pos, k);
-      k++;
-      j--;
-    } else {
-      val = kv_A(positions, j);
+    if(j < end_idx) {
+      if(k < kv_size(fp_pos) && kv_A(fp_pos, k) < kv_A(*positions, j) - start_pos) {
+        val = kv_A(fp_pos, k);
+        k++;
+        j--;
+      } else {
+        val = kv_A(*positions, j) - start_pos;
+      }
+    } else { // add a label for the end of the fragment (which DOES NOT correspond to a label site)
+      val = frag_len;
     }
     // apply Cauchy-distributed inter-label error
     float c = cauchy(err_mean, err_std);
     while(c < 0) c = cauchy(err_mean, err_std); // under some error parameters, a proper cauchy random variable will end up with negative values, which we can't allow
     uint32_t f = last_stretched + (val - last) * uniform_stretch * c;
-    if(c < 0 || f < last_stretched) {
-      fprintf(stderr, "cauchy: %f\n", c);
-      fprintf(stderr, "label %d orig dist: %u, new dist: %u\n", j, val-last, f-last_stretched);
-    }
 
     // then include only fragments that exceed some minimum size (typically, ~1kb for Bionano)
     // and fall above FN rate
-    if(((double)rand() / (double)RAND_MAX) > fn_rate || j == kv_size(positions)-1) { // this last position is the end of the molecule and can't be FN
+    if(((double)rand() / (double)RAND_MAX) > fn_rate || j == end_idx) { // this last position is the end of the molecule and can't be FN
       if(kv_size(*modpos) == 0 || f - last_stretched >= resolution_min) {
         kv_push(uint32_t, *modpos, f);
       } else { // if this label is too close to the last, use only the midpoint of the two
@@ -145,8 +139,6 @@ u32Vec* bn_map(char* seq, uint32_t seqlen, char **motifs, size_t n_motifs, float
     last = val;
     last_stretched = f;
   }
-
-  kv_destroy(positions);
 
   return modpos;
 }
@@ -171,8 +163,9 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   posVec frag_positions;
   kv_init(frag_positions);
 
-  seqVec ref_seqs;
-  kv_init(ref_seqs);
+  fragVec ref_labels;
+  kv_init(ref_labels);
+
   u32Vec ref_lens;
   kv_init(ref_lens);
 
@@ -190,14 +183,19 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
     //fprintf(stderr, "Reading sequence '%s' (%i bp).\n", seq->name.s, l);
     genome_size = genome_size + seq->seq.l;
 
-    char* s = malloc((l+1)*sizeof(char));
-    s[l] = '\0';
-    strncpy(s, seq->seq.s, l);
+    int nlimit = 100; // break strings of Ns at least 100bp long
+
+    // do digestion + shearing with some probability
+    u32Vec *positions = (u32Vec*)malloc(sizeof(u32Vec));
+    kv_init(*positions);
+    int res = digest(seq->seq.s, l, motifs, n_motifs, 1, 0, nlimit, positions);
+    //fprintf(stderr, "  has %u labels.\n", kv_size(*positions));
+
     char* n = malloc((seq->name.l+1)*sizeof(char));
     n[seq->name.l] = '\0';
     strncpy(n, seq->name.s, seq->name.l);
     kv_push(char*, ref_names, n);
-    kv_push(char*, ref_seqs, s);
+    kv_push(u32Vec*, ref_labels, positions);
     kv_push(uint32_t, ref_lens, seq->seq.l); // I think this comes as a size_t, hopefully it will cast quietly...
 
     ref++;
@@ -238,15 +236,22 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
     //fprintf(stderr, "fragment length: %u\n", frag_len);
     if(pos + frag_len > kv_A(ref_lens, ref_id))
       frag_len = kv_A(ref_lens, ref_id) - pos;
-    u32Vec *f = bn_map(kv_A(ref_seqs, ref_id)+pos, frag_len, motifs, n_motifs, fn, fp, err_mean, err_std, resolution_min);
+
+    // find fragment start and end index in ref_pos
+    for(i = 0; i < kv_size(*kv_A(ref_labels, ref_id)) && kv_A(*kv_A(ref_labels, ref_id), i) < pos; i++);
+    for(j = i; j < kv_size(*kv_A(ref_labels, ref_id)) && kv_A(*kv_A(ref_labels, ref_id), j) < pos+frag_len; j++);
+    //fprintf(stderr, "labels %d -> %d\n", i, j);
+
+    u32Vec *f = bn_map(kv_A(ref_labels, ref_id), i, j, pos, frag_len, fn, fp, err_mean, err_std, resolution_min);
     //fprintf(stderr, "mapping done, got %u fragments\n", kv_size(*f));
 
     // reverse fragments randomly to represent opposite strand (labels are already strand-agnostic)
     if(rand()%2 == 0) {
-      for(i = 0; i < kv_size(*f)/2; i++) {
+      uint32_t len = kv_A(*f, kv_size(*f)-1);
+      for(i = 0; i < (kv_size(*f)-1)/2; i++) { // we leave the last label alone since it represents the molecule length
         tmp = kv_A(*f, i);
-        kv_A(*f, i) = kv_A(*f, kv_size(*f)-1-i);
-        kv_A(*f, kv_size(*f)-1-i) = tmp;
+        kv_A(*f, i) = len - kv_A(*f, kv_size(*f)-2-i); // the rest get reversed in order and adjusted to remain monotonically increasing
+        kv_A(*f, kv_size(*f)-2-i) = len - tmp;
       }
     }
 
