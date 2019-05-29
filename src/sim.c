@@ -139,6 +139,7 @@ u32Vec* bn_map(u32Vec *positions, int start_idx, int end_idx, uint64_t start_pos
     last = val;
     last_stretched = f;
   }
+  kv_destroy(fp_pos);
 
   return modpos;
 }
@@ -291,6 +292,11 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
     //fprintf(stderr, "-- running total: %u of %u\n", tot_covg, target_coverage);
   }
 
+  for(i = 0; i < kv_size(ref_labels); i++) {
+    kv_destroy(*kv_A(ref_labels, i));
+  }
+  kv_destroy(ref_labels);
+
   // if last was an incomplete chimera, just end it and add it
   if(chimera_parts > 0)
     kv_push(u32Vec*, fragments, prev_f);
@@ -303,7 +309,9 @@ cmap simulate_bnx(char* ref_fasta, char** motifs, size_t n_motifs, float frag_pr
   for(i = 0; i < kv_size(fragments); i++) {
     //fprintf(stderr, "adding map %d of size %u\n", i, kv_size(*kv_A(fragments, i)));
     add_map(&c, i+1, kv_A(fragments, i)->a, kv_size(*kv_A(fragments, i)), 1);
+    kv_destroy(*kv_A(fragments, i));
   }
+  kv_destroy(fragments);
   c.source = frag_positions;
   return c;
 }
