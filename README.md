@@ -79,8 +79,13 @@ To simulate 100x coverage from a reference genome (fasta) using the DLE-1 recogn
 
     rekit simulate -f <fasta> -r CTTAAG -x 100 -s <output_truth> > <output_bnx>
 
-Output
-------
+Simulate 10x coverage from the human reference genome with DLE-1 (should take <1 minute):
+
+    wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.39_GRCh38.p13/GCF_000001405.39_GRCh38.p13_genomic.fna.gz
+    rekit simulate -f GCF_000001405.39_GRCh38.p13_genomic.fna.gz -r CTTAAG -x 10 -s GRCh38_rekit_10x_truth.tsv > GRCh38_rekit_10x.bnx
+
+Alignment output
+----------------
 
 Tab-delimited text to stdout with the following fields:
 
